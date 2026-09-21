@@ -554,7 +554,15 @@ linux/out/cl_cva6_linux.bin    # fw_payload @ 0x80000000 (~28 MiB)
 linux/out/cl_cva6_linux.dtb
 ```
 
-One-shot: `$CL_DIR/linux/run_bringup.sh`
+One-shot full build + boot: `$CL_DIR/linux/run_bringup.sh`
+
+Boot only (image already in `linux/out/`, avoids re-running `sdk_setup.sh`):
+
+```bash
+$CL_DIR/linux/boot_fpga_only.sh
+```
+
+Log: `linux/out/last_boot.log`. Defaults: AGFI `agfi-0248c1f84010b03e9`, `UART_IDLE_MS=120000`.
 
 DTS (`cl_cva6_linux.dts`): `stdout-path` 115200, `earlycon=uart8250,mmio32,0x10000000,115200`, `rdinit=/init`, 1 GiB memory, one hart, CLINT/PLIC/UART. The comment in the DTS about 128 KiB BRAM is **stale**; silicon is 1 GiB HBM.
 
