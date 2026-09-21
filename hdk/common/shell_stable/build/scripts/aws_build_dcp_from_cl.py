@@ -275,7 +275,11 @@ def main():
         dest="package_only",
         action="store_true",
         default=False,
-        help="Skip Vivado and package an existing post-route DCP. Requires --tag matching the checkpoint timestamp and all four of --clock_recipe_a/b/c/hbm passed explicitly (recipes are not defaulted or derived from the DCP).",
+        help=(
+            "Skip Vivado and package an existing post-route DCP. Requires --tag matching the checkpoint "
+            "timestamp and all four of --clock_recipe_a/b/c/hbm passed explicitly (recipes are not defaulted "
+            "or derived from the DCP)."
+        ),
     )
 
     (options, args) = parser.parse_args()
