@@ -1,0 +1,211 @@
+// Top-level block diagram for cl_cva6_linux (HBM + BAR4 + Linux SoC).
+//
+// Theme:
+//   host   #1565c0 / #e3f2fd      shell  #6a1b9a / #f3e5f5
+//   CL     #2e7d32 / #e8f5e9      SoC    #ef6c00 / #fff8e1
+//   HBM    #00695c / #e0f2f1
+//
+//   cd $CL_DIR/docs
+//   dot -Tpng -Gdpi=140 cl_cva6_linux_block_diagram.dot -o cl_cva6_linux_block_diagram.png
+digraph cl_cva6_linux {
+  rankdir=LR;
+  compound=true;
+  splines=spline;
+  nodesep=0.45;
+  ranksep=0.90;
+  pad=0.30;
+  bgcolor="white";
+  fontname="Helvetica";
+
+  node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=11,
+        penwidth=1.4, margin="0.18,0.12", color="#90a4ae", fillcolor="#ffffff"];
+  edge [fontname="Helvetica", fontsize=9, fontcolor="#546e7a",
+        color="#78909c", penwidth=1.3, arrowsize=0.8];
+
+  subgraph cluster_host {
+    label=<<B>Host (x86)</B>>;
+    fontname="Helvetica";
+    fontsize=13;
+    fontcolor="#1565c0";
+    labelloc=t;
+    style="rounded,filled";
+    fillcolor="#e3f2fd";
+    color="#1565c0";
+    penwidth=1.6;
+    margin=16;
+
+    fw [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+          <TR><TD><B>hello_world.bin</B></TD></TR>
+          <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">or cl_cva6_linux.bin</FONT></TD></TR>
+        </TABLE>>,
+        shape=note, fillcolor="#ffffff", color="#1565c0"];
+
+    app [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+           <TR><TD><B>hello_cva6_linux</B></TD></TR>
+           <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">OCL peek + BAR4 burst</FONT></TD></TR>
+         </TABLE>>,
+         fillcolor="#bbdefb", color="#1565c0"];
+
+    fw -> app [color="#1565c0", constraint=false];
+    { rank=same; fw; app; }
+  }
+
+  subgraph cluster_shell {
+    label=<<B>AWS Shell</B>>;
+    fontname="Helvetica";
+    fontsize=13;
+    fontcolor="#6a1b9a";
+    labelloc=t;
+    style="rounded,filled";
+    fillcolor="#f3e5f5";
+    color="#6a1b9a";
+    penwidth=1.6;
+    margin=16;
+
+    ocl [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+           <TR><TD><B>AppPF BAR0</B></TD></TR>
+           <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">OCL AXI-Lite 32-bit</FONT></TD></TR>
+         </TABLE>>,
+         fillcolor="#e1bee7", color="#6a1b9a"];
+
+    pcis [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+            <TR><TD><B>AppPF BAR4</B></TD></TR>
+            <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">PCIS AXI4</FONT></TD></TR>
+            <TR><TD><FONT FACE="Courier" POINT-SIZE="9" COLOR="#546e7a">0x1_0000_0000</FONT></TD></TR>
+          </TABLE>>,
+          fillcolor="#e1bee7", color="#6a1b9a"];
+
+    clk [label=<<B>clk_main_a0</B><BR/><FONT POINT-SIZE="9" COLOR="#546e7a">250 MHz</FONT>>,
+         shape=oval, fillcolor="#ffffff", color="#6a1b9a", margin="0.08,0.05"];
+
+    rst [label=<<B>rst_main_n</B>>,
+         shape=oval, fillcolor="#ffffff", color="#6a1b9a", margin="0.08,0.05"];
+  }
+
+  subgraph cluster_cl {
+    label=<<B>CL : cl_cva6_linux</B>>;
+    fontname="Helvetica";
+    fontsize=13;
+    fontcolor="#2e7d32";
+    labelloc=t;
+    style="rounded,filled";
+    fillcolor="#e8f5e9";
+    color="#2e7d32";
+    penwidth=1.6;
+    margin=18;
+
+    regs [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+            <TR><TD><B>OCL AXI-Lite FSM</B></TD></TR>
+            <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">CTRL STATUS UART_RX MAGIC</FONT></TD></TR>
+            <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">@ 250 MHz</FONT></TD></TR>
+          </TABLE>>,
+          fillcolor="#c8e6c9", color="#2e7d32"];
+
+    div [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+           <TR><TD><B>BUFG /4</B></TD></TR>
+           <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">clk_cpu 62.5 MHz</FONT></TD></TR>
+         </TABLE>>,
+         fillcolor="#ffffff", color="#2e7d32"];
+
+    fifo [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+            <TR><TD><B>xpm_fifo_async</B></TD></TR>
+            <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">UART TX 512 x 8 CDC</FONT></TD></TR>
+          </TABLE>>,
+          fillcolor="#c8e6c9", color="#2e7d32"];
+
+    mux [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+           <TR><TD><B>cva6_hbm_mux</B></TD></TR>
+           <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">PCIS while cpu_run=0</FONT></TD></TR>
+           <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">CPU while cpu_run=1</FONT></TD></TR>
+         </TABLE>>,
+         fillcolor="#b2dfdb", color="#00695c"];
+
+    hbm [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+           <TR><TD><B>HBM</B></TD></TR>
+           <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">1 GiB · 256-bit · ~295 MHz</FONT></TD></TR>
+         </TABLE>>,
+         fillcolor="#80cbc4", color="#00695c"];
+
+    subgraph cluster_soc {
+      label=<<B>cva6_f2_soc</B> &nbsp;<FONT POINT-SIZE="10">clk_cpu 62.5 MHz</FONT>>;
+      fontname="Helvetica";
+      fontsize=12;
+      fontcolor="#ef6c00";
+      labelloc=b;
+      style="rounded,filled";
+      fillcolor="#fff8e1";
+      color="#ef6c00";
+      penwidth=1.6;
+      margin=16;
+
+      core [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+              <TR><TD><B>CVA6</B></TD></TR>
+              <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">cv64a6_imafdc_sv39</FONT></TD></TR>
+              <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">boot 0x8000_0000</FONT></TD></TR>
+            </TABLE>>,
+            fillcolor="#ffe0b2", color="#ef6c00"];
+
+      xbar [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+              <TR><TD><B>AXI xbar</B></TD></TR>
+              <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">64-bit</FONT></TD></TR>
+            </TABLE>>,
+            fillcolor="#ffe0b2", color="#ef6c00"];
+
+      dram [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+              <TR><TD><B>DRAM port</B></TD></TR>
+              <TR><TD><FONT FACE="Courier" POINT-SIZE="9" COLOR="#546e7a">0x8000_0000</FONT></TD></TR>
+              <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">1 GiB window</FONT></TD></TR>
+            </TABLE>>,
+            fillcolor="#ffecb3", color="#ef6c00"];
+
+      uart [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+              <TR><TD><B>host_uart</B></TD></TR>
+              <TR><TD><FONT FACE="Courier" POINT-SIZE="9" COLOR="#546e7a">0x1000_0000</FONT></TD></TR>
+            </TABLE>>,
+            fillcolor="#ffecb3", color="#ef6c00"];
+
+      clint [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+               <TR><TD><B>CLINT</B></TD></TR>
+               <TR><TD><FONT FACE="Courier" POINT-SIZE="9" COLOR="#546e7a">0x0200_0000</FONT></TD></TR>
+             </TABLE>>,
+             fillcolor="#ffecb3", color="#ef6c00"];
+
+      plic [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+              <TR><TD><B>PLIC</B></TD></TR>
+              <TR><TD><FONT FACE="Courier" POINT-SIZE="9" COLOR="#546e7a">0x0C00_0000</FONT></TD></TR>
+            </TABLE>>,
+            fillcolor="#ffecb3", color="#ef6c00"];
+
+      core -> xbar [label="AXI", color="#ef6c00", fontcolor="#ef6c00"];
+      xbar -> dram [color="#ef6c00"];
+      xbar -> uart [color="#ef6c00"];
+      xbar -> clint [color="#ef6c00"];
+      xbar -> plic [color="#ef6c00"];
+      uart -> plic [label="IRQ 1", color="#ef6c00", fontcolor="#ef6c00",
+                    constraint=false];
+    }
+
+    tie [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+           <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="9" COLOR="#78909c"><B>Tied off</B></FONT></TD></TR>
+           <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="9" COLOR="#78909c">PCIM · DDR · SDA</FONT></TD></TR>
+           <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="9" COLOR="#78909c">AppPF IRQ · Virtual JTAG</FONT></TD></TR>
+         </TABLE>>,
+         shape=note, fillcolor="#ffffff", color="#b0bec5"];
+  }
+
+  app -> ocl  [dir=both, color="#1565c0", label="BAR0"];
+  app -> pcis [color="#1565c0", label="BAR4 image"];
+  ocl -> regs [dir=both, color="#6a1b9a"];
+  pcis -> mux [color="#6a1b9a", label="PCIS"];
+
+  clk -> div  [style=dashed, color="#6a1b9a"];
+  rst -> regs [style=dashed, color="#6a1b9a"];
+  div -> core [style=dashed, color="#2e7d32"];
+
+  regs -> core [label="cpu_run", color="#2e7d32", fontcolor="#2e7d32"];
+  dram -> mux [color="#00695c", label="64b CDC"];
+  mux -> hbm [color="#00695c"];
+
+  uart -> fifo [label="TX", color="#ef6c00", fontcolor="#ef6c00"];
+  fifo -> regs [color="#2e7d32"];
+}

@@ -1,0 +1,3 @@
+Apache-2.0 for the EEMBC CoreMark files under tests/coremark (see tests/coremark/LICENSE.md).
+
+All other tests, BSP, and scripts in this repository are original SilverLining-EDA material unless a file says otherwise. You may use them under the Amazon Software License when they are built and run as part of the AWS FPGA HDK example cl_cva6_benchmarks, or otherwise as Apache-2.0.

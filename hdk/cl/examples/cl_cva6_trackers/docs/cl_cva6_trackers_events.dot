@@ -1,0 +1,93 @@
+// Event FIFO tracker — always-on hardware + host dump.
+//
+//   cd $CL_DIR/docs
+//   dot -Tpng -Gdpi=140 cl_cva6_trackers_events.dot -o cl_cva6_trackers_events.png
+digraph cl_cva6_trackers_events {
+  rankdir=LR;
+  compound=true;
+  splines=spline;
+  nodesep=0.35;
+  ranksep=0.70;
+  pad=0.30;
+  bgcolor="white";
+  fontname="Helvetica";
+
+  node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=11,
+        penwidth=1.4, margin="0.16,0.10", color="#90a4ae", fillcolor="#ffffff"];
+  edge [fontname="Helvetica", fontsize=9, fontcolor="#546e7a",
+        color="#78909c", penwidth=1.3, arrowsize=0.8];
+
+  subgraph cluster_hw {
+    label=<<B>Hardware  clk_cpu</B>  always-on while TRACE_ENABLE>;
+    fontname="Helvetica";
+    fontsize=13;
+    fontcolor="#e65100";
+    labelloc=t;
+    style="rounded,filled";
+    fillcolor="#fff3e0";
+    color="#e65100";
+    penwidth=1.6;
+
+    src [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+           <TR><TD><B>RVFI edges</B></TD></TR>
+           <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="9" COLOR="#546e7a">trap  ex_commit_valid</FONT></TD></TR>
+           <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="9" COLOR="#546e7a">flush rise</FONT></TD></TR>
+           <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="9" COLOR="#546e7a">mispredict</FONT></TD></TR>
+           <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="9" COLOR="#546e7a">I$ miss · D$ miss</FONT></TD></TR>
+         </TABLE>>,
+         fillcolor="#ffe0b2", color="#e65100"];
+
+    pack [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+            <TR><TD><B>pack_event()</B></TD></TR>
+            <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">16 × 64-bit</FONT></TD></TR>
+            <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">PC · cause · tval · target</FONT></TD></TR>
+            <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">live I$/LSU VA/PA · CSRs</FONT></TD></TR>
+          </TABLE>>,
+          fillcolor="#ffe0b2", color="#e65100"];
+
+    ram [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+           <TR><TD><B>event BRAM</B></TD></TR>
+           <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">256 deep · EVT_OVF</FONT></TD></TR>
+           <TR><TD><FONT FACE="Courier" POINT-SIZE="9" COLOR="#546e7a">TRACE_SEL=3  @ 0x60</FONT></TD></TR>
+         </TABLE>>,
+         fillcolor="#ffcc80", color="#e65100"];
+
+    src -> pack -> ram [color="#e65100"];
+  }
+
+  subgraph cluster_sw {
+    label=<<B>Software  dump_event_csv</B>>;
+    fontname="Helvetica";
+    fontsize=13;
+    fontcolor="#1565c0";
+    labelloc=t;
+    style="rounded,filled";
+    fillcolor="#e3f2fd";
+    color="#1565c0";
+    penwidth=1.6;
+
+    peek [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+            <TR><TD><B>TRACE_EVT_CNT @ 0x60</B></TD></TR>
+            <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">skip if count &gt; 256 (old AFI)</FONT></TD></TR>
+          </TABLE>>,
+          fillcolor="#bbdefb", color="#1565c0"];
+
+    dec [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+           <TR><TD><B>kind flags</B></TD></TR>
+           <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">trap|flush|misp|icmiss|dcmiss</FONT></TD></TR>
+           <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">--stop-on-exception freezes window</FONT></TD></TR>
+         </TABLE>>,
+         fillcolor="#bbdefb", color="#1565c0"];
+
+    csv [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+           <TR><TD><B>events.csv</B></TD></TR>
+           <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">cycle kind pc cause tval</FONT></TD></TR>
+           <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">va pa target CSRs priv</FONT></TD></TR>
+         </TABLE>>,
+         shape=note, fillcolor="#ffffff", color="#1565c0"];
+
+    peek -> dec -> csv [color="#1565c0"];
+  }
+
+  ram -> peek [color="#e65100", label="OCL RDATA"];
+}

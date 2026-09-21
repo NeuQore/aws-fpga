@@ -1,0 +1,115 @@
+// L1 hit/miss tracker — tag-compare probes + host dump + always-on counters.
+//
+//   cd $CL_DIR/docs
+//   dot -Tpng -Gdpi=140 cl_cva6_trackers_l1.dot -o cl_cva6_trackers_l1.png
+digraph cl_cva6_trackers_l1 {
+  rankdir=LR;
+  compound=true;
+  splines=spline;
+  nodesep=0.35;
+  ranksep=0.55;
+  pad=0.30;
+  bgcolor="white";
+  fontname="Helvetica";
+
+  node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=11,
+        penwidth=1.4, margin="0.16,0.10", color="#90a4ae", fillcolor="#ffffff"];
+  edge [fontname="Helvetica", fontsize=9, fontcolor="#546e7a",
+        color="#78909c", penwidth=1.3, arrowsize=0.8];
+
+  subgraph cluster_probe {
+    label=<<B>CVA6 probes</B>>;
+    fontname="Helvetica";
+    fontsize=12;
+    fontcolor="#ad1457";
+    labelloc=t;
+    style="rounded,filled";
+    fillcolor="#fce4ec";
+    color="#ad1457";
+    penwidth=1.6;
+
+    ic [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+          <TR><TD><B>cva6_icache hit_o</B></TD></TR>
+          <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">READ tag compare</FONT></TD></TR>
+          <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">miss_o on cacheable fill ack</FONT></TD></TR>
+        </TABLE>>,
+        fillcolor="#f8bbd0", color="#ad1457"];
+
+    dc [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+          <TR><TD><B>wt_dcache_ctrl hit_o</B></TD></TR>
+          <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">load / PTW ports only</FONT></TD></TR>
+          <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">store-buffer hits omitted</FONT></TD></TR>
+        </TABLE>>,
+        fillcolor="#f8bbd0", color="#ad1457"];
+  }
+
+  subgraph cluster_hw {
+    label=<<B>Hardware  cva6_trace_capture</B>>;
+    fontname="Helvetica";
+    fontsize=12;
+    fontcolor="#ad1457";
+    labelloc=t;
+    style="rounded,filled";
+    fillcolor="#fce4ec";
+    color="#ad1457";
+    penwidth=1.6;
+
+    pack [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+            <TR><TD><B>pack_l1()</B></TD></TR>
+            <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">4 × 64-bit  windowed</FONT></TD></TR>
+            <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">I$ VA/PA or LSU VA/PA</FONT></TD></TR>
+            <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">skid if I$ and D$ same cycle</FONT></TD></TR>
+          </TABLE>>,
+          fillcolor="#f8bbd0", color="#ad1457"];
+
+    ram [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+           <TR><TD><B>L1 BRAM</B></TD></TR>
+           <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">2048 deep · L1_OVF</FONT></TD></TR>
+           <TR><TD><FONT FACE="Courier" POINT-SIZE="9" COLOR="#546e7a">TRACE_SEL=4  @ 0x64</FONT></TD></TR>
+         </TABLE>>,
+         fillcolor="#f48fb1", color="#ad1457"];
+
+    cnt [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+           <TR><TD><B>Always-on counters</B></TD></TR>
+           <TR><TD><FONT FACE="Courier" POINT-SIZE="9" COLOR="#546e7a">0x68 IC_HIT  0x6C IC_MISS</FONT></TD></TR>
+           <TR><TD><FONT FACE="Courier" POINT-SIZE="9" COLOR="#546e7a">0x70 DC_HIT  0x74 DC_MISS</FONT></TD></TR>
+           <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">not gated by the cycle window</FONT></TD></TR>
+         </TABLE>>,
+         fillcolor="#f8bbd0", color="#ad1457"];
+  }
+
+  subgraph cluster_sw {
+    label=<<B>Software  dump_l1_csv</B>>;
+    fontname="Helvetica";
+    fontsize=12;
+    fontcolor="#1565c0";
+    labelloc=t;
+    style="rounded,filled";
+    fillcolor="#e3f2fd";
+    color="#1565c0";
+    penwidth=1.6;
+
+    peek [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+            <TR><TD><B>TRACE_L1_CNT @ 0x64</B></TD></TR>
+            <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">skip if count &gt; 2048 (old AFI)</FONT></TD></TR>
+          </TABLE>>,
+          fillcolor="#bbdefb", color="#1565c0"];
+
+    csv [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+           <TR><TD><B>l1.csv</B></TD></TR>
+           <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">cycle cache(I/D) kind(hit/miss)</FONT></TD></TR>
+           <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">va pa</FONT></TD></TR>
+         </TABLE>>,
+         shape=note, fillcolor="#ffffff", color="#1565c0"];
+
+    peek -> csv [color="#1565c0"];
+  }
+
+  ic -> pack [color="#ad1457"];
+  dc -> pack [color="#ad1457"];
+  ic -> cnt [color="#ad1457"];
+  dc -> cnt [color="#ad1457"];
+  pack -> ram [color="#ad1457"];
+  ram -> peek [color="#ad1457", label="OCL RDATA"];
+  cnt -> peek [style=dashed, color="#1565c0", label="printed, not CSV"];
+}

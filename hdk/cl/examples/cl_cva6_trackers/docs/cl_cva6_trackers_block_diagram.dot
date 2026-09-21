@@ -1,0 +1,172 @@
+// Top-level block diagram for cl_cva6_trackers.
+//
+//   cd $CL_DIR/docs
+//   dot -Tpng -Gdpi=140 cl_cva6_trackers_block_diagram.dot -o cl_cva6_trackers_block_diagram.png
+digraph cl_cva6_trackers {
+  rankdir=LR;
+  compound=true;
+  splines=spline;
+  nodesep=0.40;
+  ranksep=0.80;
+  pad=0.30;
+  bgcolor="white";
+  fontname="Helvetica";
+
+  node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=11,
+        penwidth=1.4, margin="0.16,0.10", color="#90a4ae", fillcolor="#ffffff"];
+  edge [fontname="Helvetica", fontsize=9, fontcolor="#546e7a",
+        color="#78909c", penwidth=1.3, arrowsize=0.8];
+
+  subgraph cluster_host {
+    label=<<B>Host (x86)</B>>;
+    fontname="Helvetica";
+    fontsize=13;
+    fontcolor="#1565c0";
+    labelloc=t;
+    style="rounded,filled";
+    fillcolor="#e3f2fd";
+    color="#1565c0";
+    penwidth=1.6;
+    margin=14;
+
+    bin [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+           <TR><TD><B>*.bin</B></TD></TR>
+           <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">benchmarks/tests/...</FONT></TD></TR>
+         </TABLE>>,
+         shape=note, fillcolor="#ffffff", color="#1565c0"];
+
+    app [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+           <TR><TD><B>run_cva6_trackers</B></TD></TR>
+           <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">window + BAR4 load + CSV dump</FONT></TD></TR>
+         </TABLE>>,
+         fillcolor="#bbdefb", color="#1565c0"];
+
+    csv [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+           <TR><TD><B>instr.csv</B></TD></TR>
+           <TR><TD><B>icache.csv  dcache.csv</B></TD></TR>
+           <TR><TD><B>events.csv  l1.csv</B></TD></TR>
+         </TABLE>>,
+         shape=note, fillcolor="#ffffff", color="#c62828"];
+
+    bin -> app [color="#1565c0"];
+    app -> csv [color="#c62828"];
+  }
+
+  subgraph cluster_shell {
+    label=<<B>AWS Shell</B>>;
+    fontname="Helvetica";
+    fontsize=13;
+    fontcolor="#6a1b9a";
+    labelloc=t;
+    style="rounded,filled";
+    fillcolor="#f3e5f5";
+    color="#6a1b9a";
+    penwidth=1.6;
+    margin=14;
+
+    ocl [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+           <TR><TD><B>AppPF BAR0</B></TD></TR>
+           <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">OCL AXI-Lite</FONT></TD></TR>
+           <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">CTRL + TRACE_* @ 0x20</FONT></TD></TR>
+         </TABLE>>,
+         fillcolor="#e1bee7", color="#6a1b9a"];
+
+    pcis [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+            <TR><TD><B>AppPF BAR4</B></TD></TR>
+            <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">PCIS AXI4</FONT></TD></TR>
+            <TR><TD><FONT FACE="Courier" POINT-SIZE="9" COLOR="#546e7a">0x1_0000_0000</FONT></TD></TR>
+          </TABLE>>,
+          fillcolor="#e1bee7", color="#6a1b9a"];
+  }
+
+  subgraph cluster_cl {
+    label=<<B>CL : cl_cva6_trackers</B>  MAGIC 0xC6A66402  DID 0xF0C8>;
+    fontname="Helvetica";
+    fontsize=13;
+    fontcolor="#2e7d32";
+    labelloc=t;
+    style="rounded,filled";
+    fillcolor="#e8f5e9";
+    color="#2e7d32";
+    penwidth=1.6;
+    margin=16;
+
+    regs [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+            <TR><TD><B>OCL FSM</B></TD></TR>
+            <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">clk_main_a0 250 MHz</FONT></TD></TR>
+            <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">window + SEL/IDX/WORD</FONT></TD></TR>
+          </TABLE>>,
+          fillcolor="#c8e6c9", color="#2e7d32"];
+
+    mux [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+           <TR><TD><B>cva6_hbm_mux</B></TD></TR>
+           <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">PCIS if cpu_run=0</FONT></TD></TR>
+           <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">CPU if cpu_run=1</FONT></TD></TR>
+         </TABLE>>,
+         fillcolor="#b2dfdb", color="#00695c"];
+
+    hbm [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+           <TR><TD><B>HBM 1 GiB</B></TD></TR>
+           <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">CVA6 0x8000_0000</FONT></TD></TR>
+         </TABLE>>,
+         fillcolor="#80cbc4", color="#00695c"];
+
+    subgraph cluster_soc {
+      label=<<B>cva6_f2_soc</B>  clk_cpu 62.5 MHz>;
+      fontname="Helvetica";
+      fontsize=12;
+      fontcolor="#ef6c00";
+      labelloc=b;
+      style="rounded,filled";
+      fillcolor="#fff8e1";
+      color="#ef6c00";
+      penwidth=1.6;
+      margin=14;
+
+      core [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+              <TR><TD><B>CVA6</B></TD></TR>
+              <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">cv64a6_imafdc_sv39</FONT></TD></TR>
+              <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">RVFI probes</FONT></TD></TR>
+            </TABLE>>,
+            fillcolor="#ffe0b2", color="#ef6c00"];
+
+      xbar [label=<<B>AXI xbar</B>>, fillcolor="#ffe0b2", color="#ef6c00"];
+
+      dram [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+              <TR><TD><B>DRAM master</B></TD></TR>
+              <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">ID LSB 0 = I-cache</FONT></TD></TR>
+              <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">ID LSB 1 = D-cache</FONT></TD></TR>
+            </TABLE>>,
+            fillcolor="#ffecb3", color="#ef6c00"];
+
+      cap [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+             <TR><TD><B>cva6_trace_capture</B></TD></TR>
+             <TR><TD><FONT POINT-SIZE="9" COLOR="#c62828">cycle window + packers</FONT></TD></TR>
+           </TABLE>>,
+           fillcolor="#ffcdd2", color="#c62828"];
+
+      ram [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+             <TR><TD><B>5× cva6_trace_ram</B></TD></TR>
+             <TR><TD><FONT POINT-SIZE="9" COLOR="#c62828">instr / I$ AXI / D$ AXI 1024</FONT></TD></TR>
+             <TR><TD><FONT POINT-SIZE="9" COLOR="#c62828">events 256 · L1 lookups 2048</FONT></TD></TR>
+             <TR><TD><FONT POINT-SIZE="9" COLOR="#c62828">write clk_cpu, read clk_main</FONT></TD></TR>
+           </TABLE>>,
+           fillcolor="#ffcdd2", color="#c62828"];
+
+      core -> xbar [color="#ef6c00"];
+      xbar -> dram [color="#ef6c00"];
+      core -> cap [label="RVFI", color="#c62828", fontcolor="#c62828"];
+      dram -> cap [label="AXI snoop", color="#c62828", fontcolor="#c62828"];
+      cap -> ram [color="#c62828"];
+    }
+  }
+
+  app -> ocl  [dir=both, color="#1565c0", label="BAR0"];
+  app -> pcis [color="#1565c0", label="BAR4 image"];
+  ocl -> regs [dir=both, color="#6a1b9a"];
+  regs -> ram [dir=back, color="#c62828", label="SEL/IDX/WORD"];
+  regs -> cap [label="enable/start/end/clear", color="#c62828", fontcolor="#c62828"];
+  pcis -> mux [color="#6a1b9a"];
+  dram -> mux [color="#00695c"];
+  mux -> hbm [color="#00695c"];
+}

@@ -1,0 +1,120 @@
+// Host software flow for run_cva6_trackers.
+//
+//   cd $CL_DIR/docs
+//   dot -Tpng -Gdpi=140 cl_cva6_trackers_software_flow.dot -o cl_cva6_trackers_software_flow.png
+digraph cl_cva6_trackers_software_flow {
+  rankdir=TB;
+  compound=true;
+  splines=spline;
+  nodesep=0.40;
+  ranksep=0.42;
+  pad=0.30;
+  bgcolor="white";
+  fontname="Helvetica";
+
+  node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=11,
+        penwidth=1.4, margin="0.18,0.10", color="#90a4ae", fillcolor="#ffffff"];
+  edge [fontname="Helvetica", fontsize=9, fontcolor="#546e7a",
+        color="#78909c", penwidth=1.3, arrowsize=0.8];
+
+  subgraph cluster_prep {
+    label=<<B>Once</B>>;
+    fontname="Helvetica";
+    fontsize=13;
+    fontcolor="#546e7a";
+    labelloc=t;
+    style="rounded,filled";
+    fillcolor="#eceff1";
+    color="#546e7a";
+    penwidth=1.6;
+    margin=14;
+
+    p0 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+          <TR><TD ALIGN="LEFT"><B>Load AGFI</B></TD></TR>
+          <TR><TD ALIGN="LEFT"><FONT FACE="Courier" POINT-SIZE="9" COLOR="#546e7a">fpga-load-local-image -I agfi-03d44036bdd40848f</FONT></TD></TR>
+          <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="9" COLOR="#78909c">DID 0xF0C8 — not the linux AGFI</FONT></TD></TR>
+        </TABLE>>,
+        fillcolor="#cfd8dc", color="#546e7a"];
+
+    p1 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+          <TR><TD ALIGN="LEFT"><B>Build host + kernel</B></TD></TR>
+          <TR><TD ALIGN="LEFT"><FONT FACE="Courier" POINT-SIZE="9" COLOR="#546e7a">make -C software/runtime</FONT></TD></TR>
+          <TR><TD ALIGN="LEFT"><FONT FACE="Courier" POINT-SIZE="9" COLOR="#546e7a">make -C .../tests/&lt;name&gt;</FONT></TD></TR>
+        </TABLE>>,
+        fillcolor="#cfd8dc", color="#546e7a"];
+
+    p0 -> p1 [color="#546e7a"];
+  }
+
+  subgraph cluster_run {
+    label=<<B>run_cva6_trackers</B>  every kernel>;
+    fontname="Helvetica";
+    fontsize=13;
+    fontcolor="#1565c0";
+    labelloc=t;
+    style="rounded,filled";
+    fillcolor="#e3f2fd";
+    color="#1565c0";
+    penwidth=1.6;
+    margin=14;
+
+    r1 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+          <TR><TD ALIGN="LEFT"><B>1 &nbsp;Identify CL</B></TD></TR>
+          <TR><TD ALIGN="LEFT"><FONT FACE="Courier" POINT-SIZE="9" COLOR="#546e7a">BAR0 MAGIC == 0xC6A66402</FONT></TD></TR>
+        </TABLE>>,
+        fillcolor="#bbdefb", color="#1565c0"];
+
+    r2 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+          <TR><TD ALIGN="LEFT"><B>2 &nbsp;Hold core, wait HBM</B></TD></TR>
+          <TR><TD ALIGN="LEFT"><FONT FACE="Courier" POINT-SIZE="9" COLOR="#546e7a">CTRL.cpu_run = 0</FONT></TD></TR>
+          <TR><TD ALIGN="LEFT"><FONT FACE="Courier" POINT-SIZE="9" COLOR="#546e7a">STATUS[16] hbm_ready</FONT></TD></TR>
+        </TABLE>>,
+        fillcolor="#bbdefb", color="#1565c0"];
+
+    r3 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+          <TR><TD ALIGN="LEFT"><B>3 &nbsp;Program window (before cpu_run)</B></TD></TR>
+          <TR><TD ALIGN="LEFT"><FONT FACE="Courier" POINT-SIZE="9" COLOR="#546e7a">TRACE_START / TRACE_END</FONT></TD></TR>
+          <TR><TD ALIGN="LEFT"><FONT FACE="Courier" POINT-SIZE="9" COLOR="#546e7a">TRACE_CTRL = CLEAR | ENABLE</FONT></TD></TR>
+          <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="9" COLOR="#78909c">default [2000, 4000)</FONT></TD></TR>
+        </TABLE>>,
+        fillcolor="#ffcdd2", color="#c62828"];
+
+    r4 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+          <TR><TD ALIGN="LEFT"><B>4 &nbsp;Burst-write image</B></TD></TR>
+          <TR><TD ALIGN="LEFT"><FONT FACE="Courier" POINT-SIZE="9" COLOR="#546e7a">BAR4 @ 0x1_0000_0000</FONT></TD></TR>
+          <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="9" COLOR="#546e7a">CVA6 sees 0x8000_0000</FONT></TD></TR>
+        </TABLE>>,
+        fillcolor="#bbdefb", color="#1565c0"];
+
+    r5 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+          <TR><TD ALIGN="LEFT"><B>5 &nbsp;Release core</B></TD></TR>
+          <TR><TD ALIGN="LEFT"><FONT FACE="Courier" POINT-SIZE="9" COLOR="#546e7a">CTRL.cpu_run = 1</FONT></TD></TR>
+          <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="9" COLOR="#78909c">cycle counter starts at 0</FONT></TD></TR>
+        </TABLE>>,
+        fillcolor="#bbdefb", color="#1565c0"];
+
+    r6 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+          <TR><TD ALIGN="LEFT"><B>6 &nbsp;Drain UART</B></TD></TR>
+          <TR><TD ALIGN="LEFT"><FONT FACE="Courier" POINT-SIZE="9" COLOR="#546e7a">UART_RX</FONT> until --uart-idle-ms</TD></TR>
+        </TABLE>>,
+        fillcolor="#bbdefb", color="#1565c0"];
+
+    r7 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+          <TR><TD ALIGN="LEFT"><B>7 &nbsp;Read STATUS + counts</B></TD></TR>
+          <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="9" COLOR="#546e7a">INSTR / IC / DC / EVT / L1 OVF</FONT></TD></TR>
+        </TABLE>>,
+        fillcolor="#ffcdd2", color="#c62828"];
+
+    r8 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+          <TR><TD ALIGN="LEFT"><B>8 &nbsp;Dump BRAMs over OCL</B></TD></TR>
+          <TR><TD ALIGN="LEFT"><FONT FACE="Courier" POINT-SIZE="9" COLOR="#546e7a">SEL / IDX / WORD → RDATA</FONT></TD></TR>
+          <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="9" COLOR="#546e7a">instr icache dcache events l1.csv</FONT></TD></TR>
+        </TABLE>>,
+        fillcolor="#ffcdd2", color="#c62828"];
+
+    r1 -> r2 -> r3 -> r4 -> r5 -> r6 -> r7 -> r8 [color="#1565c0"];
+  }
+
+  p1 -> r1 [ltail=cluster_prep, lhead=cluster_run, constraint=false,
+            color="#546e7a", penwidth=1.6];
+}

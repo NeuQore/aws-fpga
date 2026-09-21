@@ -1,0 +1,3 @@
+*.log
+run_cva6_trackers
+traces/

@@ -1,0 +1,4 @@
+*.log
+run_cva6_benchmark
+run_cva6_llama
+hello_cva6_linux

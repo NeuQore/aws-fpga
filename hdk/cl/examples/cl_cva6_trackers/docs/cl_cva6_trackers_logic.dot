@@ -1,0 +1,230 @@
+// Generated tracking logic inside cva6_trace_capture.
+//
+//   cd $CL_DIR/docs
+//   dot -Tpng -Gdpi=140 cl_cva6_trackers_logic.dot -o cl_cva6_trackers_logic.png
+digraph cl_cva6_trackers_logic {
+  rankdir=TB;
+  compound=true;
+  splines=spline;
+  nodesep=0.35;
+  ranksep=0.55;
+  pad=0.30;
+  bgcolor="white";
+  fontname="Helvetica";
+
+  node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=11,
+        penwidth=1.4, margin="0.16,0.10", color="#90a4ae", fillcolor="#ffffff"];
+  edge [fontname="Helvetica", fontsize=9, fontcolor="#546e7a",
+        color="#78909c", penwidth=1.3, arrowsize=0.8];
+
+  subgraph cluster_cfg {
+    label=<<B>Host-programmed (OCL, clk_main_a0)</B>>;
+    fontname="Helvetica";
+    fontsize=12;
+    fontcolor="#1565c0";
+    labelloc=t;
+    style="rounded,filled";
+    fillcolor="#e3f2fd";
+    color="#1565c0";
+    penwidth=1.6;
+
+    cfg [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+           <TR><TD ALIGN="LEFT">enable · clear (stretched ~16 clk_main)</TD></TR>
+           <TR><TD ALIGN="LEFT">start (inclusive) · end (exclusive)</TD></TR>
+         </TABLE>>,
+         fillcolor="#bbdefb", color="#1565c0"];
+  }
+
+  subgraph cluster_cpu {
+    label=<<B>clk_cpu 62.5 MHz</B>>;
+    fontname="Helvetica";
+    fontsize=12;
+    fontcolor="#ef6c00";
+    labelloc=t;
+    style="rounded,filled";
+    fillcolor="#fff8e1";
+    color="#ef6c00";
+    penwidth=1.6;
+
+    cyc [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+           <TR><TD><B>cycle_q</B></TD></TR>
+           <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">0 while cpu_run=0 or clear</FONT></TD></TR>
+           <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">+1 each clk_cpu while running</FONT></TD></TR>
+         </TABLE>>,
+         fillcolor="#ffe0b2", color="#ef6c00"];
+
+    win [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+           <TR><TD><B>in_window</B></TD></TR>
+           <TR><TD><FONT FACE="Courier" POINT-SIZE="9" COLOR="#546e7a">enable &amp;&amp; cpu_run</FONT></TD></TR>
+           <TR><TD><FONT FACE="Courier" POINT-SIZE="9" COLOR="#546e7a">&amp;&amp; start &lt;= cycle &lt; end</FONT></TD></TR>
+         </TABLE>>,
+         fillcolor="#ffe0b2", color="#ef6c00"];
+
+    cyc -> win [color="#ef6c00"];
+  }
+
+  subgraph cluster_instr {
+    label=<<B>Instruction tracker</B>>;
+    fontname="Helvetica";
+    fontsize=12;
+    fontcolor="#c62828";
+    labelloc=t;
+    style="rounded,filled";
+    fillcolor="#ffebee";
+    color="#c62828";
+    penwidth=1.6;
+
+    rvfi [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+            <TR><TD><B>RVFI probes</B></TD></TR>
+            <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">commit ports 0 and 1</FONT></TD></TR>
+            <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">PC · fu_op · trans_id (scoreboard)</FONT></TD></TR>
+            <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">rd_wdata · priv · instret</FONT></TD></TR>
+          </TABLE>>,
+          fillcolor="#ffcdd2", color="#c62828"];
+
+    packi [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+             <TR><TD><B>pack_instr()</B></TD></TR>
+             <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">16 × 64-bit record</FONT></TD></TR>
+             <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">1-entry skid if dual commit</FONT></TD></TR>
+           </TABLE>>,
+           fillcolor="#ffcdd2", color="#c62828"];
+
+    rami [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+            <TR><TD><B>instr BRAM</B></TD></TR>
+            <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">1024 × 1024-bit</FONT></TD></TR>
+            <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">sticky INSTR_OVF</FONT></TD></TR>
+          </TABLE>>,
+          fillcolor="#ef9a9a", color="#c62828"];
+
+    rvfi -> packi -> rami [color="#c62828"];
+  }
+
+  subgraph cluster_cache {
+    label=<<B>Cache trackers (DRAM AXI snoop)</B>>;
+    fontname="Helvetica";
+    fontsize=12;
+    fontcolor="#6a1b9a";
+    labelloc=t;
+    style="rounded,filled";
+    fillcolor="#f3e5f5";
+    color="#6a1b9a";
+    penwidth=1.6;
+
+    axi [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+           <TR><TD><B>master[DRAM_IDX]</B></TD></TR>
+           <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">AR/R/AW/W/B handshakes</FONT></TD></TR>
+           <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">ID table remembers addr/size</FONT></TD></TR>
+         </TABLE>>,
+         fillcolor="#e1bee7", color="#6a1b9a"];
+
+    split [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+             <TR><TD><B>ID[0] split</B></TD></TR>
+             <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="9" COLOR="#546e7a">0 = I-cache  (AR, R)</FONT></TD></TR>
+             <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="9" COLOR="#546e7a">1 = D-cache  (AR, R, AW, W, B)</FONT></TD></TR>
+           </TABLE>>,
+           fillcolor="#e1bee7", color="#6a1b9a"];
+
+    packc [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+             <TR><TD><B>pack_cache()</B></TD></TR>
+             <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">8 × 64-bit  kind/id/pa/data/strb</FONT></TD></TR>
+             <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">L1 hits never leave this port</FONT></TD></TR>
+           </TABLE>>,
+           fillcolor="#e1bee7", color="#6a1b9a"];
+
+    ramc [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+            <TR><TD><B>I-cache BRAM + D-cache BRAM</B></TD></TR>
+            <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">1024 × 512-bit each</FONT></TD></TR>
+            <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">sticky IC_OVF / DC_OVF</FONT></TD></TR>
+          </TABLE>>,
+          fillcolor="#ce93d8", color="#6a1b9a"];
+
+    axi -> split -> packc -> ramc [color="#6a1b9a"];
+  }
+
+  subgraph cluster_evt {
+    label=<<B>Event FIFO (always-on)</B>>;
+    fontname="Helvetica";
+    fontsize=12;
+    fontcolor="#e65100";
+    labelloc=t;
+    style="rounded,filled";
+    fillcolor="#fff3e0";
+    color="#e65100";
+    penwidth=1.6;
+
+    evts [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+            <TR><TD><B>trap · flush · misp · I$/D$ miss</B></TD></TR>
+            <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">pack_event  16 × 64-bit</FONT></TD></TR>
+          </TABLE>>,
+          fillcolor="#ffe0b2", color="#e65100"];
+
+    rame [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+            <TR><TD><B>event BRAM 256</B></TD></TR>
+            <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">sticky EVT_OVF</FONT></TD></TR>
+          </TABLE>>,
+          fillcolor="#ffcc80", color="#e65100"];
+
+    evts -> rame [color="#e65100"];
+  }
+
+  subgraph cluster_l1 {
+    label=<<B>L1 lookup tracker</B>>;
+    fontname="Helvetica";
+    fontsize=12;
+    fontcolor="#ad1457";
+    labelloc=t;
+    style="rounded,filled";
+    fillcolor="#fce4ec";
+    color="#ad1457";
+    penwidth=1.6;
+
+    l1p [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+           <TR><TD><B>hit_o / miss_o</B></TD></TR>
+           <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">I$ READ tag · D$ load/PTW</FONT></TD></TR>
+         </TABLE>>,
+         fillcolor="#f8bbd0", color="#ad1457"];
+
+    packl [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+             <TR><TD><B>pack_l1()</B></TD></TR>
+             <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">4 × 64-bit  windowed</FONT></TD></TR>
+           </TABLE>>,
+           fillcolor="#f8bbd0", color="#ad1457"];
+
+    raml [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+            <TR><TD><B>L1 BRAM 2048</B></TD></TR>
+            <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">sticky L1_OVF + hit/miss counters</FONT></TD></TR>
+          </TABLE>>,
+          fillcolor="#f48fb1", color="#ad1457"];
+
+    l1p -> packl -> raml [color="#ad1457"];
+  }
+
+  subgraph cluster_rd {
+    label=<<B>OCL readout (clk_main_a0)</B>>;
+    fontname="Helvetica";
+    fontsize=12;
+    fontcolor="#2e7d32";
+    labelloc=t;
+    style="rounded,filled";
+    fillcolor="#e8f5e9";
+    color="#2e7d32";
+    penwidth=1.6;
+
+    mux [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+           <TR><TD><B>rd_sel / rd_idx / rd_word</B></TD></TR>
+           <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">0=instr  1=I$ AXI  2=D$ AXI  3=events  4=L1</FONT></TD></TR>
+           <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">64-bit slice → TRACE_RDATA</FONT></TD></TR>
+         </TABLE>>,
+         fillcolor="#c8e6c9", color="#2e7d32"];
+  }
+
+  cfg -> cyc [color="#1565c0"];
+  cfg -> evts [color="#e65100", label="enable"];
+  win -> rvfi [color="#c62828", label="gate"];
+  win -> axi [color="#6a1b9a", label="gate"];
+  win -> l1p [color="#ad1457", label="gate"];
+  rami -> mux [color="#2e7d32"];
+  ramc -> mux [color="#2e7d32"];
+  rame -> mux [color="#2e7d32"];
+  raml -> mux [color="#2e7d32"];
+}

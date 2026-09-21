@@ -1,0 +1,79 @@
+/dts-v1/;
+
+/ {
+  #address-cells = <2>;
+  #size-cells = <2>;
+  compatible = "aws,cl-cva6-linux";
+  model = "CVA6 RV64 on AWS F2";
+
+  chosen {
+    stdout-path = "/soc/uart@10000000:115200n8";
+    bootargs = "console=ttyS0,115200 earlycon=uart8250,mmio32,0x10000000,115200 root=/dev/ram rw rdinit=/init";
+  };
+
+  cpus {
+    #address-cells = <1>;
+    #size-cells = <0>;
+    timebase-frequency = <31250000>;
+
+    CPU0: cpu@0 {
+      device_type = "cpu";
+      reg = <0>;
+      status = "okay";
+      compatible = "riscv";
+      riscv,isa = "rv64imafdc_zicsr_zifencei";
+      mmu-type = "riscv,sv39";
+      clock-frequency = <62500000>;
+
+      CPU0_intc: interrupt-controller {
+        #address-cells = <0>;
+        #interrupt-cells = <1>;
+        interrupt-controller;
+        compatible = "riscv,cpu-intc";
+      };
+    };
+  };
+
+  memory@80000000 {
+    device_type = "memory";
+    /* Intended HBM window (1 GiB). Current FPGA silicon maps only 128 KiB
+       of BRAM here; do not boot this DTB until HBM is connected and
+       DramBytes / this reg size match. */
+    reg = <0x0 0x80000000 0x0 0x40000000>;
+  };
+
+  soc {
+    #address-cells = <2>;
+    #size-cells = <2>;
+    compatible = "simple-bus";
+    ranges;
+
+    clint@2000000 {
+      compatible = "riscv,clint0";
+      interrupts-extended = <&CPU0_intc 3 &CPU0_intc 7>;
+      reg = <0x0 0x02000000 0x0 0x000c0000>;
+    };
+
+    PLIC0: interrupt-controller@c000000 {
+      #address-cells = <0>;
+      #interrupt-cells = <1>;
+      compatible = "riscv,plic0";
+      interrupt-controller;
+      interrupts-extended = <&CPU0_intc 11 &CPU0_intc 9>;
+      reg = <0x0 0x0c000000 0x0 0x04000000>;
+      riscv,max-priority = <7>;
+      riscv,ndev = <30>;
+    };
+
+    uart@10000000 {
+      compatible = "ns16550a";
+      reg = <0x0 0x10000000 0x0 0x1000>;
+      clock-frequency = <62500000>;
+      current-speed = <115200>;
+      reg-shift = <2>;
+      reg-io-width = <4>;
+      interrupt-parent = <&PLIC0>;
+      interrupts = <1>;
+    };
+  };
+};

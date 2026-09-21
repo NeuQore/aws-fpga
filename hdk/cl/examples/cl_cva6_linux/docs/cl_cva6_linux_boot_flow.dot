@@ -1,0 +1,131 @@
+// Build and run flow for cl_cva6_linux.
+//
+//   cd $CL_DIR/docs
+//   dot -Tpng -Gdpi=140 cl_cva6_linux_boot_flow.dot -o cl_cva6_linux_boot_flow.png
+digraph cl_cva6_linux_boot_flow {
+  rankdir=TB;
+  compound=true;
+  splines=spline;
+  nodesep=0.45;
+  ranksep=0.50;
+  pad=0.30;
+  bgcolor="white";
+  fontname="Helvetica";
+
+  node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=11,
+        penwidth=1.4, margin="0.20,0.12", color="#90a4ae", fillcolor="#ffffff"];
+  edge [fontname="Helvetica", fontsize=9, fontcolor="#546e7a",
+        color="#78909c", penwidth=1.3, arrowsize=0.8];
+
+  subgraph cluster_build {
+    label=<<B>Build</B> &nbsp;<FONT POINT-SIZE="10">one time / as needed</FONT>>;
+    fontname="Helvetica";
+    fontsize=13;
+    fontcolor="#546e7a";
+    labelloc=t;
+    style="rounded,filled";
+    fillcolor="#eceff1";
+    color="#546e7a";
+    penwidth=1.6;
+    margin=16;
+
+    b0 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+          <TR><TD ALIGN="LEFT"><B>0 &nbsp;CVA6 submodules</B></TD></TR>
+          <TR><TD ALIGN="LEFT"><FONT FACE="Courier" POINT-SIZE="9" COLOR="#546e7a">git submodule update</FONT></TD></TR>
+        </TABLE>>,
+        fillcolor="#cfd8dc", color="#546e7a"];
+
+    b1 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+          <TR><TD ALIGN="LEFT"><B>1 &nbsp;DCP</B></TD></TR>
+          <TR><TD ALIGN="LEFT"><FONT FACE="Courier" POINT-SIZE="9" COLOR="#546e7a">aws_build_dcp_from_cl.py -c cl_cva6_linux --no-encrypt</FONT></TD></TR>
+          <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="9" COLOR="#78909c">no --clock_recipe_* · ~30–60 min</FONT></TD></TR>
+        </TABLE>>,
+        fillcolor="#cfd8dc", color="#546e7a"];
+
+    b2 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+          <TR><TD ALIGN="LEFT"><B>2 &nbsp;AFI</B></TD></TR>
+          <TR><TD ALIGN="LEFT"><FONT FACE="Courier" POINT-SIZE="9" COLOR="#546e7a">create_afi.py</FONT></TD></TR>
+          <TR><TD ALIGN="LEFT"><FONT FACE="Courier" POINT-SIZE="9" COLOR="#546e7a">fpga-load-local-image -I agfi-0248c1f84010b03e9</FONT></TD></TR>
+        </TABLE>>,
+        fillcolor="#cfd8dc", color="#546e7a"];
+
+    b3 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+          <TR><TD ALIGN="LEFT"><B>3 &nbsp;Hello-world firmware</B></TD></TR>
+          <TR><TD ALIGN="LEFT"><FONT FACE="Courier" POINT-SIZE="9" COLOR="#546e7a">make PREFIX=riscv64-unknown-elf</FONT></TD></TR>
+        </TABLE>>,
+        fillcolor="#cfd8dc", color="#546e7a"];
+
+    b4 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+          <TR><TD ALIGN="LEFT"><B>4 &nbsp;Host + Linux image</B></TD></TR>
+          <TR><TD ALIGN="LEFT"><FONT FACE="Courier" POINT-SIZE="9" COLOR="#546e7a">make  (hello_cva6_linux)</FONT></TD></TR>
+          <TR><TD ALIGN="LEFT"><FONT FACE="Courier" POINT-SIZE="9" COLOR="#546e7a">fetch_sources.sh &amp;&amp; build_linux.sh</FONT></TD></TR>
+        </TABLE>>,
+        fillcolor="#cfd8dc", color="#546e7a"];
+
+    b0 -> b1 -> b2 -> b3 -> b4 [color="#546e7a"];
+  }
+
+  subgraph cluster_run {
+    label=<<B>Run</B> &nbsp;<FONT POINT-SIZE="10">same loader for hello-world and OpenSBI</FONT>>;
+    fontname="Helvetica";
+    fontsize=13;
+    fontcolor="#1565c0";
+    labelloc=t;
+    style="rounded,filled";
+    fillcolor="#e3f2fd";
+    color="#1565c0";
+    penwidth=1.6;
+    margin=16;
+
+    r1 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+          <TR><TD ALIGN="LEFT"><B>1 &nbsp;Identify CL</B></TD></TR>
+          <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="9" COLOR="#546e7a">MAGIC = 0xC6A66401</FONT></TD></TR>
+        </TABLE>>,
+        fillcolor="#bbdefb", color="#1565c0"];
+
+    r2 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+          <TR><TD ALIGN="LEFT"><B>2 &nbsp;Hold reset + HBM ready</B></TD></TR>
+          <TR><TD ALIGN="LEFT"><FONT FACE="Courier" POINT-SIZE="9" COLOR="#546e7a">CTRL.cpu_run = 0</FONT></TD></TR>
+          <TR><TD ALIGN="LEFT"><FONT FACE="Courier" POINT-SIZE="9" COLOR="#546e7a">STATUS[16] hbm_ready</FONT></TD></TR>
+        </TABLE>>,
+        fillcolor="#bbdefb", color="#1565c0"];
+
+    r3 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+          <TR><TD ALIGN="LEFT"><B>3 &nbsp;Burst-write BAR4</B></TD></TR>
+          <TR><TD ALIGN="LEFT"><FONT FACE="Courier" POINT-SIZE="9" COLOR="#546e7a">PCIS 0x1_0000_0000</FONT></TD></TR>
+          <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="9" COLOR="#546e7a">CVA6 sees 0x8000_0000</FONT></TD></TR>
+        </TABLE>>,
+        fillcolor="#bbdefb", color="#1565c0"];
+
+    r4 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+          <TR><TD ALIGN="LEFT"><B>4 &nbsp;Release core</B></TD></TR>
+          <TR><TD ALIGN="LEFT"><FONT FACE="Courier" POINT-SIZE="9" COLOR="#546e7a">CTRL.cpu_run = 1</FONT></TD></TR>
+        </TABLE>>,
+        fillcolor="#bbdefb", color="#1565c0"];
+
+    r5 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+          <TR><TD ALIGN="LEFT"><B>5 &nbsp;Drain UART</B></TD></TR>
+          <TR><TD ALIGN="LEFT"><FONT FACE="Courier" POINT-SIZE="9" COLOR="#546e7a">UART_RX</FONT> until idle --uart-idle-ms</TD></TR>
+        </TABLE>>,
+        fillcolor="#bbdefb", color="#1565c0"];
+
+    out_hw [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+              <TR><TD><B>Hello World!</B></TD></TR>
+              <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">14 bytes</FONT></TD></TR>
+            </TABLE>>,
+            shape=note, fillcolor="#ffffff", color="#2e7d32"];
+
+    out_sbi [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+               <TR><TD><B>OpenSBI v1.6</B></TD></TR>
+               <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">banner + platform dump</FONT></TD></TR>
+             </TABLE>>,
+             shape=note, fillcolor="#ffffff", color="#6a1b9a"];
+
+    r1 -> r2 -> r3 -> r4 -> r5 [color="#1565c0"];
+    r5 -> out_hw [color="#2e7d32"];
+    r5 -> out_sbi [color="#6a1b9a"];
+  }
+
+  b0 -> r1 [ltail=cluster_build, lhead=cluster_run, constraint=false,
+            color="#546e7a", penwidth=1.6];
+}

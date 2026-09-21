@@ -1,0 +1,63 @@
+#pragma once
+
+#define CL_CVA6_CTRL      0x00
+#define CL_CVA6_STATUS    0x04
+#define CL_CVA6_UART_RX   0x08
+#define CL_CVA6_MAGIC     0x0C
+#define CL_CVA6_MEM_ADDR  0x10
+#define CL_CVA6_MEM_WDATA 0x14
+#define CL_CVA6_MEM_RDATA 0x18
+#define CL_CVA6_MEM_CMD   0x1C
+
+#define CL_CVA6_TRACE_CTRL      0x20
+#define CL_CVA6_TRACE_STATUS    0x24
+#define CL_CVA6_TRACE_START_LO  0x28
+#define CL_CVA6_TRACE_START_HI  0x2C
+#define CL_CVA6_TRACE_END_LO    0x30
+#define CL_CVA6_TRACE_END_HI    0x34
+#define CL_CVA6_TRACE_CYCLE_LO  0x38
+#define CL_CVA6_TRACE_CYCLE_HI  0x3C
+#define CL_CVA6_TRACE_INSTR_CNT 0x40
+#define CL_CVA6_TRACE_IC_CNT    0x44
+#define CL_CVA6_TRACE_DC_CNT    0x48
+#define CL_CVA6_TRACE_SEL       0x4C
+#define CL_CVA6_TRACE_IDX       0x50
+#define CL_CVA6_TRACE_WORD      0x54
+#define CL_CVA6_TRACE_RDATA_LO  0x58
+#define CL_CVA6_TRACE_RDATA_HI  0x5C
+#define CL_CVA6_TRACE_EVT_CNT   0x60
+#define CL_CVA6_TRACE_L1_CNT    0x64
+#define CL_CVA6_TRACE_IC_HIT    0x68
+#define CL_CVA6_TRACE_IC_MISS   0x6C
+#define CL_CVA6_TRACE_DC_HIT    0x70
+#define CL_CVA6_TRACE_DC_MISS   0x74
+
+#define CL_CVA6_TRACE_ENABLE    (1u << 0)
+#define CL_CVA6_TRACE_CLEAR     (1u << 1)
+#define CL_CVA6_TRACE_STOP_EXCP (1u << 2)
+
+#define CL_CVA6_TRACE_ST_IN_WINDOW   (1u << 0)
+#define CL_CVA6_TRACE_ST_INSTR_OVF   (1u << 1)
+#define CL_CVA6_TRACE_ST_IC_OVF      (1u << 2)
+#define CL_CVA6_TRACE_ST_DC_OVF      (1u << 3)
+#define CL_CVA6_TRACE_ST_EVT_OVF     (1u << 4)
+#define CL_CVA6_TRACE_ST_L1_OVF      (1u << 5)
+#define CL_CVA6_TRACE_ST_WINDOW_DONE (1u << 8)
+#define CL_CVA6_TRACE_ST_FROZEN      (1u << 9)
+
+#define CL_CVA6_MAGIC_VAL 0xC6A66402u
+#define CL_CVA6_MEM_WRITE 1u
+#define CL_CVA6_MEM_READ  2u
+
+#define CL_CVA6_STATUS_UART_VALID (1u << 0)
+#define CL_CVA6_STATUS_HBM_READY  (1u << 16)
+#define CL_CVA6_STATUS_CPU_GRANT  (1u << 17)
+
+#define CL_PCIS_HBM_BASE   0x0000001000000000ULL
+#define CL_CVA6_DRAM_BYTES (1ULL << 30)
+
+#define CL_CVA6_INSTR_WORDS 16
+#define CL_CVA6_CACHE_WORDS 8
+#define CL_CVA6_EVENT_WORDS 16
+#define CL_CVA6_L1_WORDS    4
+#define CL_CVA6_L1_DEPTH    2048

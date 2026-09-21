@@ -1,0 +1,89 @@
+// D-cache DRAM AXI tracker — hardware snoop + host ASCII / latency.
+//
+//   cd $CL_DIR/docs
+//   dot -Tpng -Gdpi=140 cl_cva6_trackers_dcache.dot -o cl_cva6_trackers_dcache.png
+digraph cl_cva6_trackers_dcache {
+  rankdir=LR;
+  compound=true;
+  splines=spline;
+  nodesep=0.35;
+  ranksep=0.70;
+  pad=0.30;
+  bgcolor="white";
+  fontname="Helvetica";
+
+  node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=11,
+        penwidth=1.4, margin="0.16,0.10", color="#90a4ae", fillcolor="#ffffff"];
+  edge [fontname="Helvetica", fontsize=9, fontcolor="#546e7a",
+        color="#78909c", penwidth=1.3, arrowsize=0.8];
+
+  subgraph cluster_hw {
+    label=<<B>Hardware  clk_cpu</B>  windowed · DRAM only>;
+    fontname="Helvetica";
+    fontsize=13;
+    fontcolor="#00695c";
+    labelloc=t;
+    style="rounded,filled";
+    fillcolor="#e0f2f1";
+    color="#00695c";
+    penwidth=1.6;
+
+    axi [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+           <TR><TD><B>master[DRAM]</B></TD></TR>
+           <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">AR/R  ID[0]==1  (refill)</FONT></TD></TR>
+           <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">AW/W/B  WT stores</FONT></TD></TR>
+         </TABLE>>,
+         fillcolor="#b2dfdb", color="#00695c"];
+
+    pack [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+            <TR><TD><B>pack_cache()</B></TD></TR>
+            <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">kind AR R AW W B</FONT></TD></TR>
+            <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">strb on W · resp on R/B</FONT></TD></TR>
+          </TABLE>>,
+          fillcolor="#b2dfdb", color="#00695c"];
+
+    ram [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+           <TR><TD><B>D-cache BRAM</B></TD></TR>
+           <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">1024 deep · DC_OVF</FONT></TD></TR>
+           <TR><TD><FONT FACE="Courier" POINT-SIZE="9" COLOR="#546e7a">TRACE_SEL=2</FONT></TD></TR>
+         </TABLE>>,
+         fillcolor="#80cbc4", color="#00695c"];
+
+    axi -> pack -> ram [color="#00695c"];
+  }
+
+  subgraph cluster_sw {
+    label=<<B>Software  dump_cache_csv(sel=2)</B>>;
+    fontname="Helvetica";
+    fontsize=13;
+    fontcolor="#1565c0";
+    labelloc=t;
+    style="rounded,filled";
+    fillcolor="#e3f2fd";
+    color="#1565c0";
+    penwidth=1.6;
+
+    peek [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+            <TR><TD><B>TRACE_DC_CNT @ 0x48</B></TD></TR>
+          </TABLE>>,
+          fillcolor="#bbdefb", color="#1565c0"];
+
+    dec [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+           <TR><TD><B>Beat + ASCII</B></TD></TR>
+           <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">R/W beat index from ID table</FONT></TD></TR>
+           <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">printable bytes on W strb</FONT></TD></TR>
+           <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">AR→R / AW→B latency</FONT></TD></TR>
+         </TABLE>>,
+         fillcolor="#bbdefb", color="#1565c0"];
+
+    csv [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+           <TR><TD><B>dcache.csv</B></TD></TR>
+           <TR><TD><FONT POINT-SIZE="9" COLOR="#546e7a">same columns as icache.csv</FONT></TD></TR>
+         </TABLE>>,
+         shape=note, fillcolor="#ffffff", color="#1565c0"];
+
+    peek -> dec -> csv [color="#1565c0"];
+  }
+
+  ram -> peek [color="#00695c", label="OCL RDATA"];
+}
