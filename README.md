@@ -18,6 +18,12 @@ Working with FPGAs in the cloud can be challenging and FPGA & cloud development 
 provides an interactive quick-start experience intended to familiarize engineers of all backgrounds with the AWS EC2 F2 platform.
 It also provides an overview of F2's architecture, and guides the participant through loading a design and using it.
 
+## CVA6 RISC-V examples (NeuQore fork)
+
+This tree includes custom logic examples that run CVA6 on F2 (`hdk/cl/examples/cl_cva6_*`). Start with the ecosystem index:
+
+**[hdk/cl/examples/CVA6_F2_README.md](hdk/cl/examples/CVA6_F2_README.md)**
+
 ## Support
 
 For any issues with this developer kit documentation or code, please open a [GitHub issue](https://github.com/aws/aws-fpga/issues) with all steps to reproduce.

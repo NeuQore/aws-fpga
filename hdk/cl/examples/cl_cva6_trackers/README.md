@@ -2,6 +2,8 @@
 
 Copy of [`cl_cva6_benchmarks`](../cl_cva6_benchmarks/README.md) with extra RTL that records CVA6 activity inside a **host-defined CPU-cycle window**. MAGIC `0xC6A66402`, PCIe Device ID `0xF0C8`.
 
+Ecosystem index: [CVA6_F2_README.md](../CVA6_F2_README.md). CVA6 RTL: [NeuQore/cva6](https://github.com/NeuQore/cva6) branch **`f2-cva6`**. Benchmark kernels are the vendored [NeuQore/benchmarks](https://github.com/NeuQore/benchmarks) tree (symlink at `benchmarks/`).
+
 **Latest image (us-east-1), DCP `2026_09_02-090804`:**
 
 | | ID |

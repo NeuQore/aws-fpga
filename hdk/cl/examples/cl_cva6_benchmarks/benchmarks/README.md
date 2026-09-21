@@ -1,8 +1,21 @@
-# SLE RISC-V benchmarks for AWS F2 CVA6
+# NeuQore RISC-V benchmarks for AWS F2 CVA6
 
-Bare-metal kernels for [`cl_cva6_benchmarks`](https://github.com/SilverLining-EDA/aws-fpga) on AWS F2. They load through AppPF BAR4 into HBM at CVA6 `0x80000000` and print `=== START/STOP ===` markers on the host UART.
+Bare-metal kernels for F2 CVA6 custom logic examples. They load through AppPF BAR4 into HBM at CVA6 `0x80000000` and print `=== START/STOP ===` markers on the host UART.
 
-ISA: **RV64IMAFDC** (`cv64a6_imafdc_sv39`). Same AGFI as `cl_cva6_linux`: `agfi-0248c1f84010b03e9`.
+**Canonical repo:** [NeuQore/benchmarks](https://github.com/NeuQore/benchmarks) branch **`cva6`**.  
+**In aws-fpga:** vendored under [`cl_cva6_benchmarks`](../README.md).  
+**Symlink:** [`cl_cva6_trackers/benchmarks`](../../cl_cva6_trackers/README.md) points here.
+
+ISA: **RV64IMAFDC** (`cv64a6_imafdc_sv39`).
+
+## Which AGFI?
+
+| Load via | AGFI (`us-east-1`) | Host entry |
+|----------|---------------------|------------|
+| `cl_cva6_benchmarks`, `tests/*/run.sh` | **`agfi-0248c1f84010b03e9`** | `run_cva6_benchmark`, `_run_one.sh` |
+| [`cl_cva6_trackers/run.sh`](../../cl_cva6_trackers/README.md) | **`agfi-03d44036bdd40848f`** | `run_cva6_trackers` + trace CSVs |
+
+Do **not** run `tests/_run_one.sh` against the trackers bitstream (wrong MAGIC). Do **not** load the linux AGFI when you want trace BRAMs.
 
 ## Build
 

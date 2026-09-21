@@ -4,6 +4,8 @@ Sibling of [`cl_cva6`](../cl_cva6/README.md). Same OCL poke/peek bring-up, with 
 
 This file is the handbook for the CL: architecture, F2 infrastructure, memory and register maps, every command used in bring-up, issues already fixed, and what is still open.
 
+**NeuQore F2 stack:** HDK [NeuQore/aws-fpga](https://github.com/NeuQore/aws-fpga) branch **`cva6`**, CVA6 [NeuQore/cva6](https://github.com/NeuQore/cva6) branch **`f2-cva6`**, firmware siblings `linux` / `opensbi` / `busybox` @ **`cva6`** (see [`linux/sources.env.sh`](linux/sources.env.sh)). Overview of all CL examples and AGFIs: [CVA6_F2_README.md](../CVA6_F2_README.md).
+
 ## Status (read this first)
 
 | Path | State |

@@ -1,6 +1,8 @@
 # CL_CVA6_LLAMA — interactive llama.cpp on the same F2 AGFI
 
-Sibling of [`cl_cva6_benchmarks`](../cl_cva6_benchmarks/README.md) and [`cl_cva6_linux`](../cl_cva6_linux/README.md). **Hardware and AFI are unchanged.** This example only changes the host loader and the HBM image (`llama.bin` from [sle-benchmarks `tests/llama`](https://github.com/SilverLining-EDA/sle-benchmarks/blob/main/tests/llama/README.md)).
+Sibling of [`cl_cva6_benchmarks`](../cl_cva6_benchmarks/README.md) and [`cl_cva6_linux`](../cl_cva6_linux/README.md). **Hardware and AFI are unchanged.** This example only changes the host loader and the HBM image (`llama.bin` from [NeuQore/benchmarks `tests/llama`](https://github.com/NeuQore/benchmarks/blob/cva6/tests/llama/README.md)).
+
+Ecosystem index: [CVA6_F2_README.md](../CVA6_F2_README.md).
 
 ## Status
 
@@ -9,7 +11,7 @@ Sibling of [`cl_cva6_benchmarks`](../cl_cva6_benchmarks/README.md) and [`cl_cva6
 | AFI / AGFI | **Same as cl_cva6_linux:** `afi-06a08d518aae438a1` / **`agfi-0248c1f84010b03e9`** (`us-east-1`) |
 | RTL | Copy of `cl_cva6_linux` (MAGIC `0xC6A66401`) — do **not** rebuild a DCP |
 | Host | `software/runtime/run_cva6_llama` — logo, live UART, stdin prompts |
-| Image | `sle-benchmarks/tests/llama/llama.bin` |
+| Image | `sle-benchmarks/tests/llama/llama.bin` or vendored `cl_cva6_benchmarks/benchmarks/tests/llama/llama.bin` |
 
 ## Why a mailbox instead of UART RX
 
@@ -24,7 +26,7 @@ Decode at 62.5 MHz is slow; TinyStories-class GGUF only.
 
 ## Step by step
 
-Toolchains: [`llama.cpp/setup.sh`](https://github.com/SilverLining-EDA/llama.cpp/blob/master/setup.sh).
+Toolchains: [NeuQore/llama.cpp `setup.sh`](https://github.com/NeuQore/llama.cpp/blob/cva6/setup.sh).
 
 ```bash
 export AWS_FPGA_REPO_DIR=/projects/prj1/sle-wajahat/aws-fpga
