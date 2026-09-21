@@ -37,10 +37,7 @@ CLOCK_RECIPE_OPTS = (
 
 
 def option_on_argv(option_name):
-    for arg in sys.argv[1:]:
-        if arg == option_name or arg.startswith(option_name + "="):
-            return True
-    return False
+    return any(arg == option_name or arg.startswith(option_name + "=") for arg in sys.argv[1:])
 
 
 #############################################################
@@ -350,21 +347,21 @@ def main():
 
             Custom `clock_recipe` arguments were detected, please add `--aws_clk_gen` to continue.""")
 
-    start_time = datetime.datetime.now()
-    print(f"\nAWS FPGA: {start_time.strftime(TIMESTAMP_LOG_FORMAT)} - Build starts\n")
-    sys.stdout.flush()
-
     if options.package_only:
         if not options.build_tag:
-            print_error(
-                "--package-only requires --tag matching an existing post-route DCP (for example -t YYYY_MM_DD-HHMMSS)"
-            )
+            print_error("--package-only requires --tag matching an existing post-route DCP (for example -t YYYY_MM_DD-HHMMSS)")
         _missing_recipes = [opt for opt in CLOCK_RECIPE_OPTS if not option_on_argv(opt)]
         if _missing_recipes:
             print_error(
                 "--package-only requires all four clock recipes to be passed explicitly "
                 "(--clock_recipe_a, --clock_recipe_b, --clock_recipe_c, and --clock_recipe_hbm)"
             )
+
+    start_time = datetime.datetime.now()
+    print(f"\nAWS FPGA: {start_time.strftime(TIMESTAMP_LOG_FORMAT)} - Build starts\n")
+    sys.stdout.flush()
+
+    if options.package_only:
         print(f"AWS FPGA: --package-only set, skipping Vivado and packaging tag {build_tag}\n")
     else:
         cmd = (
