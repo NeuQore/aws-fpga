@@ -21,18 +21,11 @@ static void usage(const char *name)
 // #region agent log
 static void dbg_status(const char *hyp, const char *msg, uint32_t status, int extra)
 {
-    printf("STATUS 0x%08x grant=%u hbm=%u uart_cnt=%u uart_valid=%u (%s)\n",
-           status,
-           !!(status & CL_CVA6_STATUS_CPU_GRANT),
-           !!(status & CL_CVA6_STATUS_HBM_READY),
-           (status >> 8) & 0xff,
-           !!(status & CL_CVA6_STATUS_UART_VALID),
-           msg);
-    FILE *df = fopen("/projects/prj1/sle-wajahat/.cursor/debug-76b74b.log", "a");
+    FILE *df = fopen("/projects/prj1/sle-wajahat/.cursor/debug-d59eb7.log", "a");
     if (!df)
         return;
-    fprintf(df,
-            "{\"sessionId\":\"76b74b\",\"hypothesisId\":\"%s\",\"location\":\"hello_cva6_linux.c\","
+            fprintf(df,
+                    "{\"sessionId\":\"d59eb7\",\"hypothesisId\":\"%s\",\"location\":\"hello_cva6_linux.c\","
             "\"message\":\"%s\",\"data\":{\"status\":%u,\"grant\":%u,\"hbm\":%u,"
             "\"uart_cnt\":%u,\"uart_valid\":%u,\"extra\":%d},"
             "\"timestamp\":%ld,\"runId\":\"linux-boot\"}\n",
@@ -63,7 +56,7 @@ static int drain_uart(pci_bar_handle_t bar, int idle_limit, int echo)
             if (fpga_pci_peek(bar, CL_CVA6_UART_RX, &ch))
                 return -1;
             if (echo) {
-                putchar((int)(ch & 0xff));
+                putchar((char)(ch & 0xff));
                 fflush(stdout);
             }
             if (uart_cap_n < (int)sizeof(uart_cap) - 1)
@@ -120,6 +113,10 @@ int main(int argc, char **argv)
 {
     int rc;
     int slot_id = 0;
+
+    /* tee(1) is not a tty: default block buffering hides all output until exit */
+    setvbuf(stdout, NULL, _IOLBF, 0);
+    setvbuf(stderr, NULL, _IOLBF, 0);
     int verify = 0;
     int uart_idle_ms = 8000;
     const char *bin_path = "../firmware/hello_world.bin";
@@ -128,18 +125,27 @@ int main(int argc, char **argv)
     uint32_t magic = 0;
 
     for (int i = 1; i < argc; i++) {
-        if (!strncmp(argv[i], "--slot", 6) && i + 1 < argc)
+        const char *a = argv[i];
+
+        if (!strcmp(a, "--slot") && i + 1 < argc) {
             slot_id = atoi(argv[++i]);
-        else if (!strncmp(argv[i], "--bin", 5) && i + 1 < argc)
-            bin_path = argv[++i];
-        else if (!strcmp(argv[i], "--verify"))
-            verify = 1;
-        else if (!strcmp(argv[i], "--uart-idle-ms") && i + 1 < argc)
-            uart_idle_ms = atoi(argv[++i]);
-        else {
-            usage(argv[0]);
-            return 1;
+            continue;
         }
+        if (!strcmp(a, "--bin") && i + 1 < argc) {
+            bin_path = argv[++i];
+            continue;
+        }
+        if (!strcmp(a, "--verify")) {
+            verify = 1;
+            continue;
+        }
+        if (!strcmp(a, "--uart-idle-ms") && i + 1 < argc) {
+            uart_idle_ms = atoi(argv[++i]);
+            continue;
+        }
+        fprintf(stderr, "unknown option: %s\n", a);
+        usage(argv[0]);
+        return 1;
     }
 
     rc = log_init("hello_cva6_linux");
@@ -211,10 +217,10 @@ int main(int argc, char **argv)
         printf("HBM[0] peek rc=%d val=0x%08x expect=0x%08x\n",
                peek_rc, got_word, expect_word);
         // #region agent log
-        FILE *df = fopen("/projects/prj1/sle-wajahat/.cursor/debug-76b74b.log", "a");
+        FILE *df = fopen("/projects/prj1/sle-wajahat/.cursor/debug-d59eb7.log", "a");
         if (df) {
             fprintf(df,
-                    "{\"sessionId\":\"76b74b\",\"hypothesisId\":\"D\",\"location\":\"hello_cva6_linux.c\","
+                    "{\"sessionId\":\"d59eb7\",\"hypothesisId\":\"D\",\"location\":\"hello_cva6_linux.c\","
                     "\"message\":\"hbm0_peek\",\"data\":{\"rc\":%d,\"got\":%u,\"expect\":%u},"
                     "\"timestamp\":%ld,\"runId\":\"linux-boot\"}\n",
                     peek_rc, got_word, expect_word, (long)time(NULL) * 1000);
@@ -255,11 +261,11 @@ int main(int argc, char **argv)
     printf("\n--- done, %d byte(s) ---\n", got);
     // #region agent log
     {
-        FILE *df = fopen("/projects/prj1/sle-wajahat/.cursor/debug-76b74b.log", "a");
+        FILE *df = fopen("/projects/prj1/sle-wajahat/.cursor/debug-d59eb7.log", "a");
         if (df) {
             int i;
             fprintf(df,
-                    "{\"sessionId\":\"76b74b\",\"hypothesisId\":\"E\",\"location\":\"hello_cva6_linux.c\","
+                    "{\"sessionId\":\"d59eb7\",\"hypothesisId\":\"E\",\"location\":\"hello_cva6_linux.c\","
                     "\"message\":\"uart_done\",\"data\":{\"bytes\":%d,\"prefix\":\"",
                     got);
             uart_cap[uart_cap_n] = 0;

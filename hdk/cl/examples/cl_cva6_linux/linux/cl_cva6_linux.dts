@@ -8,7 +8,7 @@
 
   chosen {
     stdout-path = "/soc/uart@10000000:115200n8";
-    bootargs = "console=ttyS0,115200 earlycon=uart8250,mmio32,0x10000000,115200 root=/dev/ram rw rdinit=/init";
+    bootargs = "console=ttyS0,115200 earlycon=uart8250,mmio32,0x10000000,115200 no4lvl root=/dev/ram rw rdinit=/init";
   };
 
   cpus {
@@ -72,8 +72,8 @@
       current-speed = <115200>;
       reg-shift = <2>;
       reg-io-width = <4>;
-      interrupt-parent = <&PLIC0>;
-      interrupts = <1>;
+      /* No IRQ: 8250 polls. Userspace tty writes otherwise sleep on a TX
+       * interrupt that does not reach this hart, so /init never prints. */
     };
   };
 };

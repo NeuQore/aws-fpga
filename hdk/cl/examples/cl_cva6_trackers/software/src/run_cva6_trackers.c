@@ -9,6 +9,7 @@
 #include <sys/types.h>
 #include <errno.h>
 #include <time.h>
+#include <signal.h>
 
 #include "fpga_pci.h"
 #include "fpga_mgmt.h"
@@ -19,6 +20,52 @@
 
 static const struct logger *logger = &logger_stdout;
 static FILE *uart_log;
+static volatile sig_atomic_t g_uart_abort;
+static int g_linux_boot_uart;
+static int g_linux_boot_trace_reset = 1;
+/* Substring in UART stream that CLEARs trace FIFOs (default: pre-SATP milestone). */
+static char g_linux_boot_trace_trigger[64] = "081!";
+static int g_post_opensbi_idle_ms = 20000;
+static uint64_t g_window_end = 0;
+static int g_stop_on_excp = 0;
+static int g_trace_rearmed = 0;
+/* Added to BRAM cycle fields after linux-boot CLEAR (RTL resets cycle_q to 0). */
+static uint64_t g_trace_cycle_offset;
+static pci_bar_handle_t g_dump_bar0 = PCI_BAR_HANDLE_INIT;
+static char g_dump_trace_dir[512];
+static int g_traces_dumped;
+static int g_cpu_released;
+
+static int write_all_traces(pci_bar_handle_t bar0, const char *trace_dir);
+static int trace_apply_ctrl(pci_bar_handle_t bar, int stop_on_excp, int with_clear);
+static int trace_rearm_kernel_window(pci_bar_handle_t bar, const char *reason);
+static void linux_boot_try_trace_rearm(pci_bar_handle_t bar, const char *reason);
+
+/* RTL: in_window = (cycle >= start) && (cycle < end). end==0 disables capture. */
+static uint64_t trace_end_for_hw(uint64_t host_end)
+{
+    return host_end == 0 ? UINT64_MAX : host_end;
+}
+
+static uint64_t trace_cycle_abs(uint64_t raw)
+{
+    return raw + g_trace_cycle_offset;
+}
+
+static void uart_abort_handler(int sig)
+{
+    (void)sig;
+    g_uart_abort = 1;
+}
+
+static void atexit_dump_traces(void)
+{
+    if (g_traces_dumped || !g_cpu_released ||
+        g_dump_bar0 == PCI_BAR_HANDLE_INIT || !g_dump_trace_dir[0])
+        return;
+    /* Best-effort: sudo/script kill may not run main(); still try CSV dump. */
+    (void)write_all_traces(g_dump_bar0, g_dump_trace_dir);
+}
 
 static int mkdir_p(const char *path)
 {
@@ -56,7 +103,12 @@ static void usage(const char *name)
            "CPU cycles are counted from cpu_run. instr/icache/dcache capture is\n"
            "[window-start, window-end). events.csv is always-on while tracing:\n"
            "traps, flushes, mispredicts (with live LSU VA/PA and CSRs).\n"
-           "--stop-on-exception freezes the cycle window on the first trap.\n",
+           "--stop-on-exception freezes the cycle window on the first trap.\n"
+           "\n"
+           "window-end 0 = no upper bound (host maps to 2^64-1; until BRAM fills).\n"
+           "--linux-boot clears trace FIFOs on a UART substring (default 081!).\n"
+           "Use --linux-boot-trace-trigger medeleg for the old OpenSBI hook, or\n"
+           "--no-linux-boot-trace-reset to disable re-arm.\n",
            name);
 }
 
@@ -81,6 +133,106 @@ static void log_msg(const char *fmt, ...)
     }
 }
 
+static int poke64(pci_bar_handle_t bar, uint64_t lo_off, uint64_t v)
+{
+    int rc = fpga_pci_poke(bar, lo_off, (uint32_t)v);
+    if (rc)
+        return rc;
+    return fpga_pci_poke(bar, lo_off + 4, (uint32_t)(v >> 32));
+}
+
+static int peek64(pci_bar_handle_t bar, uint64_t lo_off, uint64_t *out)
+{
+    uint32_t lo = 0, hi = 0;
+    int rc = fpga_pci_peek(bar, lo_off, &lo);
+    if (rc)
+        return rc;
+    rc = fpga_pci_peek(bar, lo_off + 4, &hi);
+    if (rc)
+        return rc;
+    *out = ((uint64_t)hi << 32) | lo;
+    return 0;
+}
+
+static int trace_apply_ctrl(pci_bar_handle_t bar, int stop_on_excp, int with_clear)
+{
+    uint32_t tctrl = CL_CVA6_TRACE_ENABLE;
+    if (with_clear)
+        tctrl |= CL_CVA6_TRACE_CLEAR;
+    if (stop_on_excp)
+        tctrl |= CL_CVA6_TRACE_STOP_EXCP;
+    int rc = fpga_pci_poke(bar, CL_CVA6_TRACE_CTRL, tctrl);
+    if (rc)
+        return rc;
+    if (with_clear) {
+        usleep(1000);
+        tctrl = CL_CVA6_TRACE_ENABLE;
+        if (stop_on_excp)
+            tctrl |= CL_CVA6_TRACE_STOP_EXCP;
+        rc = fpga_pci_poke(bar, CL_CVA6_TRACE_CTRL, tctrl);
+    }
+    return rc;
+}
+
+static int trace_rearm_kernel_window(pci_bar_handle_t bar, const char *reason)
+{
+    uint64_t cycle_before = 0;
+    int rc;
+
+    if (g_trace_rearmed)
+        return 0;
+
+    rc = peek64(bar, CL_CVA6_TRACE_CYCLE_LO, &cycle_before);
+    if (rc)
+        return rc;
+
+    rc = poke64(bar, CL_CVA6_TRACE_START_LO, 0);
+    if (rc)
+        return rc;
+    rc = poke64(bar, CL_CVA6_TRACE_END_LO, trace_end_for_hw(g_window_end));
+    if (rc)
+        return rc;
+    g_trace_cycle_offset = cycle_before;
+    rc = trace_apply_ctrl(bar, g_stop_on_excp, 1);
+    if (rc)
+        return rc;
+
+    g_trace_rearmed = 1;
+    log_msg("[linux-boot] Trace re-armed (%s): window [0, %" PRIu64 ") at CPU cycle ~%" PRIu64
+            " (FIFOs cleared; csv cycle += %" PRIu64 ")\n",
+            reason ? reason : "?", g_window_end ? g_window_end : 0, cycle_before,
+            g_trace_cycle_offset);
+
+    // #region agent log
+    {
+        FILE *dbg = fopen("/projects/prj1/sle-wajahat/.cursor/debug-d59eb7.log", "a");
+        if (dbg) {
+            fprintf(dbg,
+                "{\"sessionId\":\"d59eb7\",\"runId\":\"linux-boot\",\"hypothesisId\":\"H-trigger\","
+                "\"location\":\"run_cva6_trackers.c:trace_rearm_kernel_window\","
+                "\"message\":\"trace rearm\","
+                "\"data\":{\"reason\":\"%s\",\"cycle_before\":%" PRIu64 ",\"cycle_offset\":%" PRIu64
+                ",\"window_end\":%" PRIu64 ",\"stop_on_excp\":%d},"
+                "\"timestamp\":%lld}\n",
+                reason ? reason : "", cycle_before, g_trace_cycle_offset, g_window_end,
+                g_stop_on_excp,
+                (long long)time(NULL) * 1000);
+            fclose(dbg);
+        }
+    }
+    // #endregion
+    return 0;
+}
+
+static void linux_boot_try_trace_rearm(pci_bar_handle_t bar, const char *reason)
+{
+    if (!g_linux_boot_uart || !g_linux_boot_trace_reset)
+        return;
+    if (trace_rearm_kernel_window(bar, reason) != 0)
+        log_msg("[linux-boot] warning: trace re-arm failed (%s)\n",
+                reason ? reason : "?");
+}
+
 static int drain_uart(pci_bar_handle_t bar, int idle_limit, int max_ms, int echo)
 {
     int idle = 0;
@@ -90,10 +242,12 @@ static int drain_uart(pci_bar_handle_t bar, int idle_limit, int max_ms, int echo
     char tail[193];
     int tlen = 0;
     const int post_end_idle = 400;
+    int effective_idle = idle_limit;
+    int opensbi_done = 0;
 
     memset(tail, 0, sizeof(tail));
 
-    while (elapsed < max_ms) {
+    while (elapsed < max_ms && !g_uart_abort) {
         uint32_t status = 0;
         if (fpga_pci_peek(bar, CL_CVA6_STATUS, &status))
             return -1;
@@ -117,13 +271,27 @@ static int drain_uart(pci_bar_handle_t bar, int idle_limit, int max_ms, int echo
             }
             if (strstr(tail, "=== STOP") || strstr(tail, "TRAP "))
                 saw_end = 1;
+            if (g_linux_boot_uart && !opensbi_done && strstr(tail, "MEDELEG")) {
+                opensbi_done = 1;
+                if (g_post_opensbi_idle_ms < effective_idle)
+                    effective_idle = g_post_opensbi_idle_ms;
+                log_msg("\n[linux-boot] OpenSBI done; %d ms idle then trace dump\n",
+                        effective_idle);
+                if (g_linux_boot_trace_trigger[0] &&
+                    !strcmp(g_linux_boot_trace_trigger, "medeleg"))
+                    linux_boot_try_trace_rearm(bar, "uart:medeleg");
+            }
+            if (g_linux_boot_uart && g_linux_boot_trace_trigger[0] &&
+                strcmp(g_linux_boot_trace_trigger, "medeleg") &&
+                strstr(tail, g_linux_boot_trace_trigger))
+                linux_boot_try_trace_rearm(bar, g_linux_boot_trace_trigger);
         } else {
             usleep(1000);
             idle++;
             elapsed++;
             if (saw_end && idle >= post_end_idle)
                 break;
-            if (!saw_end && idle >= idle_limit)
+            if (!saw_end && idle >= effective_idle)
                 break;
         }
     }
@@ -165,27 +333,6 @@ static int load_bar4(pci_bar_handle_t bar4, const uint8_t *buf, size_t nbytes)
             return rc;
         off += n;
     }
-    return 0;
-}
-
-static int poke64(pci_bar_handle_t bar, uint64_t lo_off, uint64_t v)
-{
-    int rc = fpga_pci_poke(bar, lo_off, (uint32_t)v);
-    if (rc)
-        return rc;
-    return fpga_pci_poke(bar, lo_off + 4, (uint32_t)(v >> 32));
-}
-
-static int peek64(pci_bar_handle_t bar, uint64_t lo_off, uint64_t *out)
-{
-    uint32_t lo = 0, hi = 0;
-    int rc = fpga_pci_peek(bar, lo_off, &lo);
-    if (rc)
-        return rc;
-    rc = fpga_pci_peek(bar, lo_off + 4, &hi);
-    if (rc)
-        return rc;
-    *out = ((uint64_t)hi << 32) | lo;
     return 0;
 }
 
@@ -623,7 +770,7 @@ static int dump_instr_csv(pci_bar_handle_t bar, const char *path, uint32_t count
         fmt_cause(cause_buf, sizeof(cause_buf), w[10], flags);
         fprintf(f,
             "%" PRIu64 ",%" PRIx64 ",%s,%x,%u,%s,%s,%s,%s,%s,%s,%u,%u,%s,%s,%u,%" PRIx64 ",%" PRIu64 "\n",
-            w[0], w[1], op_buf, insn, trans_id,
+            trace_cycle_abs(w[0]), w[1], op_buf, insn, trans_id,
             rs1_buf, rs1v_buf, rs2_buf, rs2v_buf, rd_buf, imm_buf,
             (flags >> 3) & 1, (flags >> 1) & 1, cause_buf, priv_name(priv),
             rd_valid, w[4], w[13]);
@@ -792,7 +939,7 @@ static int dump_cache_csv(pci_bar_handle_t bar, unsigned sel, const char *path, 
         // #endregion
         fprintf(f,
             "%" PRIu64 ",%s,%s,%" PRIx64 ",%s,%s,%s,%s,%s,%u,%s,%u,%s\n",
-            w[0], kind_name(kind), va_buf, line, pa_buf, beat_buf, data_buf, decode_buf,
+            trace_cycle_abs(w[0]), kind_name(kind), va_buf, line, pa_buf, beat_buf, data_buf, decode_buf,
             strb_buf, bytes, resp_buf, last, lat_buf);
     }
     // #region agent log
@@ -866,7 +1013,7 @@ static int dump_event_csv(pci_bar_handle_t bar, const char *path, uint32_t count
             "%" PRIx64 ",%" PRIx64 ",%" PRIx64 ",%" PRIx64 ","
             "%" PRIx64 ",%" PRIx64 ",%" PRIx64 ",%" PRIx64 ","
             "%u,%s,%s,%u,%u\n",
-            w[0], kind_buf, w[1], excp_name(w[3]), w[3], w[4],
+            trace_cycle_abs(w[0]), kind_buf, w[1], excp_name(w[3]), w[3], w[4],
             w[5], w[6], w[7],
             w[8], w[9], w[10], w[11],
             w[12], w[13], w[14], w[15],
@@ -927,7 +1074,7 @@ static int dump_l1_csv(pci_bar_handle_t bar, const char *path, uint32_t count)
         }
         // #endregion
         fprintf(f, "%" PRIu64 ",%s,%s,%s,%s\n",
-                w[0], is_d ? "D" : "I",
+                trace_cycle_abs(w[0]), is_d ? "D" : "I",
                 is_hit ? "hit" : (is_miss ? "miss" : "NONE"),
                 va_buf, pa_buf);
     }
@@ -950,10 +1097,129 @@ static int dump_l1_csv(pci_bar_handle_t bar, const char *path, uint32_t count)
     return 0;
 }
 
+static int write_all_traces(pci_bar_handle_t bar0, const char *trace_dir)
+{
+    uint32_t st = 0, instr_n = 0, ic_n = 0, dc_n = 0, evt_n = 0, l1_n = 0;
+    uint32_t ic_hit_n = 0, ic_miss_n = 0, dc_hit_n = 0, dc_miss_n = 0;
+    char path[512];
+    int rc;
+
+    if (g_traces_dumped)
+        return 0;
+
+    rc = fpga_pci_peek(bar0, CL_CVA6_TRACE_STATUS, &st);
+    if (rc)
+        return rc;
+    rc = fpga_pci_peek(bar0, CL_CVA6_TRACE_INSTR_CNT, &instr_n);
+    if (rc)
+        return rc;
+    rc = fpga_pci_peek(bar0, CL_CVA6_TRACE_IC_CNT, &ic_n);
+    if (rc)
+        return rc;
+    rc = fpga_pci_peek(bar0, CL_CVA6_TRACE_DC_CNT, &dc_n);
+    if (rc)
+        return rc;
+    rc = fpga_pci_peek(bar0, CL_CVA6_TRACE_EVT_CNT, &evt_n);
+    if (rc)
+        return rc;
+    rc = fpga_pci_peek(bar0, CL_CVA6_TRACE_L1_CNT, &l1_n);
+    if (rc)
+        return rc;
+    rc = fpga_pci_peek(bar0, CL_CVA6_TRACE_IC_HIT, &ic_hit_n);
+    if (rc)
+        return rc;
+    rc = fpga_pci_peek(bar0, CL_CVA6_TRACE_IC_MISS, &ic_miss_n);
+    if (rc)
+        return rc;
+    rc = fpga_pci_peek(bar0, CL_CVA6_TRACE_DC_HIT, &dc_hit_n);
+    if (rc)
+        return rc;
+    rc = fpga_pci_peek(bar0, CL_CVA6_TRACE_DC_MISS, &dc_miss_n);
+    if (rc)
+        return rc;
+
+    {
+        uint64_t trace_cycle = 0;
+        if (!peek64(bar0, CL_CVA6_TRACE_CYCLE_LO, &trace_cycle))
+            log_msg("TRACE_CYCLE=%" PRIu64 " live; csv_offset=%" PRIu64 " → abs_now=%" PRIu64 "%s\n",
+                    trace_cycle, g_trace_cycle_offset,
+                    trace_cycle + g_trace_cycle_offset,
+                    g_trace_rearmed ? " (post UART re-arm)" : "");
+    }
+    if (instr_n > CL_CVA6_INSTR_DEPTH) {
+        log_msg("TRACE_INSTR_CNT=%u > %u; dumping last %u BRAM rows\n",
+                instr_n, CL_CVA6_INSTR_DEPTH, CL_CVA6_INSTR_DEPTH);
+        instr_n = CL_CVA6_INSTR_DEPTH;
+    }
+    if (ic_n > CL_CVA6_CACHE_DEPTH)
+        ic_n = CL_CVA6_CACHE_DEPTH;
+    if (dc_n > CL_CVA6_CACHE_DEPTH)
+        dc_n = CL_CVA6_CACHE_DEPTH;
+    if (evt_n > CL_CVA6_EVT_DEPTH) {
+        log_msg("TRACE_EVT_CNT=%u > %u; dumping first %u event rows\n",
+                evt_n, CL_CVA6_EVT_DEPTH, CL_CVA6_EVT_DEPTH);
+        evt_n = CL_CVA6_EVT_DEPTH;
+    }
+    if (l1_n > CL_CVA6_L1_DEPTH) {
+        log_msg("TRACE_L1_CNT=%u > %u; dumping first %u L1 rows\n",
+                l1_n, CL_CVA6_L1_DEPTH, CL_CVA6_L1_DEPTH);
+        l1_n = CL_CVA6_L1_DEPTH;
+    }
+    log_msg("Trace status 0x%08x  instr=%u icache=%u dcache=%u events=%u l1=%u%s%s%s%s%s%s\n",
+            st, instr_n, ic_n, dc_n, evt_n, l1_n,
+            (st & CL_CVA6_TRACE_ST_INSTR_OVF) ? " INSTR_OVF" : "",
+            (st & CL_CVA6_TRACE_ST_IC_OVF) ? " IC_OVF" : "",
+            (st & CL_CVA6_TRACE_ST_DC_OVF) ? " DC_OVF" : "",
+            (st & CL_CVA6_TRACE_ST_EVT_OVF) ? " EVT_OVF" : "",
+            (st & CL_CVA6_TRACE_ST_L1_OVF) ? " L1_OVF" : "",
+            (st & CL_CVA6_TRACE_ST_FROZEN) ? " FROZEN" : "");
+    log_msg("L1 counters  ic_hit=%u ic_miss=%u dc_hit=%u dc_miss=%u\n",
+            ic_hit_n, ic_miss_n, dc_hit_n, dc_miss_n);
+
+    snprintf(path, sizeof(path), "%s/instr.csv", trace_dir);
+    rc = dump_instr_csv(bar0, path, instr_n);
+    if (rc)
+        return rc;
+    log_msg("Wrote %s (%u rows)\n", path, instr_n);
+
+    snprintf(path, sizeof(path), "%s/icache.csv", trace_dir);
+    rc = dump_cache_csv(bar0, 1, path, ic_n);
+    if (rc)
+        return rc;
+    log_msg("Wrote %s (%u rows)\n", path, ic_n);
+
+    snprintf(path, sizeof(path), "%s/dcache.csv", trace_dir);
+    rc = dump_cache_csv(bar0, 2, path, dc_n);
+    if (rc)
+        return rc;
+    log_msg("Wrote %s (%u rows)\n", path, dc_n);
+
+    snprintf(path, sizeof(path), "%s/events.csv", trace_dir);
+    rc = dump_event_csv(bar0, path, evt_n);
+    if (rc)
+        return rc;
+    log_msg("Wrote %s (%u rows)\n", path, evt_n);
+
+    snprintf(path, sizeof(path), "%s/l1.csv", trace_dir);
+    rc = dump_l1_csv(bar0, path, l1_n);
+    if (rc)
+        return rc;
+    log_msg("Wrote %s (%u rows)\n", path, l1_n);
+
+    g_traces_dumped = 1;
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     int rc;
     int slot_id = 0;
+
+    setvbuf(stdout, NULL, _IOLBF, 0);
+    setvbuf(stderr, NULL, _IOLBF, 0);
+    signal(SIGINT, uart_abort_handler);
+    signal(SIGTERM, uart_abort_handler);
+    g_uart_abort = 0;
     int uart_idle_ms = 120000;
     int uart_max_ms = 300000;
     uint64_t window_start = 2000;
@@ -964,10 +1230,7 @@ int main(int argc, char **argv)
     pci_bar_handle_t bar0 = PCI_BAR_HANDLE_INIT;
     pci_bar_handle_t bar4 = PCI_BAR_HANDLE_INIT;
     uint32_t magic = 0;
-    uint32_t instr_n = 0, ic_n = 0, dc_n = 0, evt_n = 0, l1_n = 0, st = 0;
-    uint32_t ic_hit_n = 0, ic_miss_n = 0, dc_hit_n = 0, dc_miss_n = 0;
     int stop_on_excp = 0;
-    char path[512];
 
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--slot") && i + 1 < argc)
@@ -988,12 +1251,31 @@ int main(int argc, char **argv)
             log_path = argv[++i];
         else if (!strcmp(argv[i], "--stop-on-exception"))
             stop_on_excp = 1;
+        else if (!strcmp(argv[i], "--linux-boot"))
+            g_linux_boot_uart = 1;
+        else if (!strcmp(argv[i], "--no-linux-boot-trace-reset"))
+            g_linux_boot_trace_reset = 0;
+        else if (!strcmp(argv[i], "--linux-boot-trace-trigger") && i + 1 < argc) {
+            const char *t = argv[++i];
+            if (!t[0])
+                g_linux_boot_trace_trigger[0] = '\0';
+            else {
+                size_t n = strlen(t);
+                if (n >= sizeof(g_linux_boot_trace_trigger))
+                    n = sizeof(g_linux_boot_trace_trigger) - 1;
+                memcpy(g_linux_boot_trace_trigger, t, n);
+                g_linux_boot_trace_trigger[n] = '\0';
+            }
+        } else if (!strcmp(argv[i], "--post-opensbi-idle-ms") && i + 1 < argc)
+            g_post_opensbi_idle_ms = atoi(argv[++i]);
         else {
             usage(argv[0]);
             return 1;
         }
     }
-    if (!bin_path || window_end <= window_start) {
+    g_window_end = window_end;
+    g_stop_on_excp = stop_on_excp;
+    if (!bin_path || (window_end != 0 && window_end <= window_start)) {
         usage(argv[0]);
         return 1;
     }
@@ -1037,22 +1319,21 @@ int main(int argc, char **argv)
 
     rc = poke64(bar0, CL_CVA6_TRACE_START_LO, window_start);
     fail_on(rc, out, "trace start");
-    rc = poke64(bar0, CL_CVA6_TRACE_END_LO, window_end);
+    rc = poke64(bar0, CL_CVA6_TRACE_END_LO, trace_end_for_hw(window_end));
     fail_on(rc, out, "trace end");
-    uint32_t tctrl = CL_CVA6_TRACE_ENABLE | CL_CVA6_TRACE_CLEAR;
-    if (stop_on_excp)
-        tctrl |= CL_CVA6_TRACE_STOP_EXCP;
-    rc = fpga_pci_poke(bar0, CL_CVA6_TRACE_CTRL, tctrl);
-    fail_on(rc, out, "trace clear");
-    usleep(1000);
-    tctrl = CL_CVA6_TRACE_ENABLE;
-    if (stop_on_excp)
-        tctrl |= CL_CVA6_TRACE_STOP_EXCP;
-    rc = fpga_pci_poke(bar0, CL_CVA6_TRACE_CTRL, tctrl);
-    fail_on(rc, out, "trace enable");
-    log_msg("Trace window [%" PRIu64 ", %" PRIu64 ") CPU cycles%s\n",
+    rc = trace_apply_ctrl(bar0, stop_on_excp, 1);
+    fail_on(rc, out, "trace enable/clear");
+    log_msg("Trace window [%" PRIu64 ", %" PRIu64 ") CPU cycles%s%s\n",
             window_start, window_end,
+            window_end ? "" : " (no end — until BRAM full)",
             stop_on_excp ? " stop-on-exception" : "");
+    if (g_linux_boot_uart && g_linux_boot_trace_reset) {
+        if (g_linux_boot_trace_trigger[0])
+            log_msg("linux-boot: will CLEAR trace FIFOs on UART substring \"%s\"\n",
+                    g_linux_boot_trace_trigger);
+        else
+            log_msg("linux-boot: trace re-arm disabled (empty trigger)\n");
+    }
 
     FILE *f = fopen(bin_path, "rb");
     fail_on(!f, out, "open %s", bin_path);
@@ -1089,100 +1370,31 @@ int main(int argc, char **argv)
     (void)drain_uart(bar0, 200, 1000, 0);
 
     log_msg("Releasing CVA6 reset\n");
+    g_dump_bar0 = bar0;
+    snprintf(g_dump_trace_dir, sizeof(g_dump_trace_dir), "%s", trace_dir);
+    g_traces_dumped = 0;
+    g_cpu_released = 0;
+    atexit(atexit_dump_traces);
+
     rc = fpga_pci_poke(bar0, CL_CVA6_CTRL, 1);
     fail_on(rc, out, "run");
+    g_cpu_released = 1;
 
     log_msg("--- UART from CVA6 ---\n");
     int got = drain_uart(bar0, uart_idle_ms, uart_max_ms, 1);
-    rc = (got < 0);
-    fail_on(rc, out, "uart drain");
-    log_msg("\n--- done, %d byte(s) ---\n", got);
+    if (got < 0)
+        fail_on(1, out, "uart drain");
+    if (g_uart_abort)
+        log_msg("\n--- UART drain stopped (signal); dumping traces ---\n");
+    else
+        log_msg("\n--- done, %d byte(s); dumping traces ---\n", got);
 
-    rc = fpga_pci_peek(bar0, CL_CVA6_TRACE_STATUS, &st);
-    fail_on(rc, out, "trace status");
-    rc = fpga_pci_peek(bar0, CL_CVA6_TRACE_INSTR_CNT, &instr_n);
-    fail_on(rc, out, "instr count");
-    rc = fpga_pci_peek(bar0, CL_CVA6_TRACE_IC_CNT, &ic_n);
-    fail_on(rc, out, "icache count");
-    rc = fpga_pci_peek(bar0, CL_CVA6_TRACE_DC_CNT, &dc_n);
-    fail_on(rc, out, "dcache count");
-    rc = fpga_pci_peek(bar0, CL_CVA6_TRACE_EVT_CNT, &evt_n);
-    fail_on(rc, out, "event count");
-    rc = fpga_pci_peek(bar0, CL_CVA6_TRACE_L1_CNT, &l1_n);
-    fail_on(rc, out, "l1 count");
-    rc = fpga_pci_peek(bar0, CL_CVA6_TRACE_IC_HIT, &ic_hit_n);
-    fail_on(rc, out, "ic hit");
-    rc = fpga_pci_peek(bar0, CL_CVA6_TRACE_IC_MISS, &ic_miss_n);
-    fail_on(rc, out, "ic miss");
-    rc = fpga_pci_peek(bar0, CL_CVA6_TRACE_DC_HIT, &dc_hit_n);
-    fail_on(rc, out, "dc hit");
-    rc = fpga_pci_peek(bar0, CL_CVA6_TRACE_DC_MISS, &dc_miss_n);
-    fail_on(rc, out, "dc miss");
-    // #region agent log
-    {
-        FILE *dbg = fopen("/projects/prj1/sle-wajahat/.cursor/debug-29681a.log", "a");
-        if (dbg) {
-            fprintf(dbg,
-                "{\"sessionId\":\"29681a\",\"runId\":\"l1\",\"hypothesisId\":\"A\","
-                "\"location\":\"run_cva6_trackers.c:main\","
-                "\"message\":\"raw L1/hit-miss OCL peeks\","
-                "\"data\":{\"evt_n\":%u,\"l1_n\":%u,\"ic_hit\":%u,\"ic_miss\":%u,"
-                "\"dc_hit\":%u,\"dc_miss\":%u,\"st\":%u},"
-                "\"timestamp\":%lld}\n",
-                evt_n, l1_n, ic_hit_n, ic_miss_n, dc_hit_n, dc_miss_n, st,
-                (long long)time(NULL) * 1000);
-            fclose(dbg);
-        }
-    }
-    // #endregion
-    if (evt_n > 256) {
-        log_msg("TRACE_EVT_CNT=0x%08x (no event FIFO on this AFI); skipping events.csv\n",
-                evt_n);
-        evt_n = 0;
-    }
-    if (l1_n > CL_CVA6_L1_DEPTH) {
-        log_msg("TRACE_L1_CNT=0x%08x (no L1 lookup FIFO on this AFI); skipping l1.csv\n",
-                l1_n);
-        l1_n = 0;
-        ic_hit_n = ic_miss_n = dc_hit_n = dc_miss_n = 0;
-    }
-    log_msg("Trace status 0x%08x  instr=%u icache=%u dcache=%u events=%u l1=%u%s%s%s%s%s%s\n",
-            st, instr_n, ic_n, dc_n, evt_n, l1_n,
-            (st & CL_CVA6_TRACE_ST_INSTR_OVF) ? " INSTR_OVF" : "",
-            (st & CL_CVA6_TRACE_ST_IC_OVF) ? " IC_OVF" : "",
-            (st & CL_CVA6_TRACE_ST_DC_OVF) ? " DC_OVF" : "",
-            (st & CL_CVA6_TRACE_ST_EVT_OVF) ? " EVT_OVF" : "",
-            (st & CL_CVA6_TRACE_ST_L1_OVF) ? " L1_OVF" : "",
-            (st & CL_CVA6_TRACE_ST_FROZEN) ? " FROZEN" : "");
-    log_msg("L1 counters  ic_hit=%u ic_miss=%u dc_hit=%u dc_miss=%u\n",
-            ic_hit_n, ic_miss_n, dc_hit_n, dc_miss_n);
-
-    snprintf(path, sizeof(path), "%s/instr.csv", trace_dir);
-    rc = dump_instr_csv(bar0, path, instr_n);
-    fail_on(rc, out, "write %s", path);
-    log_msg("Wrote %s (%u rows)\n", path, instr_n);
-
-    snprintf(path, sizeof(path), "%s/icache.csv", trace_dir);
-    rc = dump_cache_csv(bar0, 1, path, ic_n);
-    fail_on(rc, out, "write %s", path);
-    log_msg("Wrote %s (%u rows)\n", path, ic_n);
-
-    snprintf(path, sizeof(path), "%s/dcache.csv", trace_dir);
-    rc = dump_cache_csv(bar0, 2, path, dc_n);
-    fail_on(rc, out, "write %s", path);
-    log_msg("Wrote %s (%u rows)\n", path, dc_n);
-
-    snprintf(path, sizeof(path), "%s/events.csv", trace_dir);
-    rc = dump_event_csv(bar0, path, evt_n);
-    fail_on(rc, out, "write %s", path);
-    log_msg("Wrote %s (%u rows)\n", path, evt_n);
-
-    snprintf(path, sizeof(path), "%s/l1.csv", trace_dir);
-    rc = dump_l1_csv(bar0, path, l1_n);
-    fail_on(rc, out, "write %s", path);
-    log_msg("Wrote %s (%u rows)\n", path, l1_n);
+    rc = write_all_traces(bar0, trace_dir);
+    fail_on(rc, out, "trace dump");
 
 out:
+    if (g_cpu_released && !g_traces_dumped)
+        (void)write_all_traces(g_dump_bar0, g_dump_trace_dir);
     free(g_image);
     g_image = NULL;
     g_image_len = 0;

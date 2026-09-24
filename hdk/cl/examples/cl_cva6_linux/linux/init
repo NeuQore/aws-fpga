@@ -1,12 +1,14 @@
 #!/bin/sh
 
+echo
+echo "CVA6 Linux booted on AWS F2"
+
 mount -t proc proc /proc
 mount -t sysfs sysfs /sys
 mount -t devtmpfs devtmpfs /dev
 
-echo
-echo "CVA6 Linux booted on AWS F2"
 echo "Kernel: $(uname -a)"
+echo "IRFAN BHAI, YOU ARE THE BEST PERSON I HAVE WORKED WITH, THANK YOU!"
 echo
 
 exec /bin/sh

@@ -24,6 +24,40 @@ Load with `sudo fpga-load-local-image -S 0 -I agfi-03d44036bdd40848f`. Do **not*
 | Latest AFI / AGFI | `afi-0351f913d541da257` / `agfi-03d44036bdd40848f` |
 | First kernel | **Pass.** `bpu_1_loop_branch`: instr + I$/D$ AXI + events + L1 hit/miss |
 
+## Boot Linux (debug `cl_cva6_linux` on trackers AFI)
+
+Same **RV64 / Sv39 / HBM @ 0x80000000** as [`cl_cva6_linux`](../cl_cva6_linux/README.md), but load the **trackers** bitstream so you get `instr.csv`, `events.csv` (traps + `satp`/`mepc`/`mcause`), and L1/AXI traces around the MMU hang (`JKBPTUV081!`).
+
+**Do not** load `agfi-0248c1f84010b03e9` (linux-only CL) for this flow.
+
+```bash
+export AWS_FPGA_REPO_DIR=/projects/prj1/sle-wajahat/aws-fpga
+# Build/update Linux payload first:
+bash $AWS_FPGA_REPO_DIR/hdk/cl/examples/cl_cva6_linux/linux/build_linux.sh
+
+cd $AWS_FPGA_REPO_DIR/hdk/cl/examples/cl_cva6_trackers
+./boot_linux.sh
+```
+
+Defaults: trace window `[0, 50M)` CPU cycles, `--stop-on-exception` (freezes windowed capture on first trap). Tune:
+
+```bash
+WINDOW_START=0 WINDOW_END=20000000 STOP_ON_EXCP=1 ./boot_linux.sh
+SKIP_AGFI_LOAD=1 ./boot_linux.sh   # if trackers AGFI already loaded
+```
+
+Outputs:
+
+| Path | Content |
+|------|---------|
+| `software/runtime/logs/linux_boot.log` | UART capture |
+| `software/runtime/traces/linux_boot/events.csv` | Traps, flushes, CSR snapshot incl. `satp` |
+| `software/runtime/traces/linux_boot/instr.csv` | Commits in the cycle window (1024 rows max) |
+
+Narrow `WINDOW_START` / `WINDOW_END` once you know the cycle from `events.csv` or `TRACE_CYCLE` after `FROZEN`.
+
+**CSV timing:** Trace files are written **only after** UART drain finishes (`--- done … dumping traces ---`). If you Ctrl+C during drain, the updated loader still dumps traces. Default `boot_linux.sh` uses 60s idle / 3min max (not 10min). An empty `traces/linux_boot/` means the run never reached the dump step.
+
 ## Diagrams
 
 Rendered PNGs live in [`docs/`](docs/) (Graphviz `.dot` sources). If a preview does not show the images, open the PNG in the editor.

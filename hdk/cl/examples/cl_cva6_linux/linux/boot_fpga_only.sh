@@ -11,17 +11,15 @@ AGFI="${AGFI:-agfi-0248c1f84010b03e9}"
 BIN="$CL_DIR/linux/out/cl_cva6_linux.bin"
 LOG="$CL_DIR/linux/out/last_boot.log"
 LOADER="$CL_DIR/software/runtime/hello_cva6_linux"
-
 if [[ ! -f "$BIN" ]]; then
   echo "Missing $BIN; run $CL_DIR/linux/build_linux.sh first" >&2
   exit 1
 fi
-if [[ ! -x "$LOADER" ]]; then
-  make -C "$CL_DIR/software/runtime"
-fi
+make -C "$CL_DIR/software/runtime"
 
 echo "== $(date -Is) load AGFI $AGFI =="
 sudo fpga-load-local-image -S 0 -I "$AGFI"
 
 echo "== $(date -Is) boot $BIN =="
-sudo "$LOADER" --bin "$BIN" --uart-idle-ms "${UART_IDLE_MS:-120000}" 2>&1 | tee "$LOG"
+# Line-buffer loader stdout/stderr so tmux + tee show output while boot runs
+stdbuf -oL -eL sudo "$LOADER" --bin "$BIN" --uart-idle-ms "${UART_IDLE_MS:-600000}" 2>&1 | tee "$LOG"
